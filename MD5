@@ -1,0 +1,6 @@
+215dda0b97fb3d175a3eee75fcc701c7 *DESCRIPTION
+a6e3306059c248894882e5762e878ab3 *NAMESPACE
+8096f6866b605eb4079fd4214bf6ce8f *R/bayesreg.R
+1e70533a7b0dd44194b139d58f3a639e *man/bayesreg.Rd
+a89f2ae6012a9fa7545193ee4dc6bcbc *man/predict.bayesreg.Rd
+94ef898ee142abe318c0a6f24f2ac785 *man/summary.bayesreg.Rd

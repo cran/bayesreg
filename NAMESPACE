@@ -1,0 +1,12 @@
+#exportPattern("^[[:alpha:]]+")
+export(bayesreg,predict.bayesreg,summary.bayesreg)
+exportClasses(
+    "bayesreg" 
+)
+importFrom("BayesLogit",rpg.devroye)
+importFrom("stats", "acf", "as.formula", "median", "model.frame",
+           "model.matrix", "quantile", "rgamma", "rnorm", "runif",
+           "sd", "terms")
+import("methods")
+S3method(summary,bayesreg)
+S3method(predict,bayesreg)
