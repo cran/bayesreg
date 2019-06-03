@@ -1,10 +1,180 @@
-# ============================================================================================================================
-# Declare the Bayesreg class
-#setClass("bayesreg")
-#library("BayesLogit")
-
-#bayesreg <- function(formula, data, model='normal', prior='ridge', nsamples = 1e3, burnin = 1e3, thin = 5, display = F, groups = NA, tdof = 5, rankvars = T)
-bayesreg <- function(formula, data, model='normal', prior='ridge', nsamples = 1e3, burnin = 1e3, thin = 5, tdof = 5)
+#' Fit a linear or logistic regression model using Bayesian continuous shrinkage prior distributions. Handles ridge, lasso, horseshoe and horseshoe+ regression with logistic,
+#' Gaussian, Laplace or Student-t distributed targets. See \code{\link{bayesreg-package}} for more details on the features available in this package.
+#'
+#' @title Fitting Bayesian Regression Models with Continuous Shrinkage Priors
+#' @param formula An object of class "\code{\link{formula}}": a symbolic description of the model to be fitted using the standard R formula notation.
+#' @param data A data frame containing the variables in the model.
+#' @param model The distribution of the target (y) variable. Continuous or numeric variables can be distributed as per a Gaussian distribution (\code{model="gaussian"} 
+#' or \code{model="normal"}), Laplace distribution (\code{model = "laplace"} or \code{model = "l1"}) or Student-t distribution (\code{"model" = "studentt"} or \code{"model" = "t"}). 
+#' For binary targets (factors with two levels) either \code{model="logistic"} or \code{"model"="binomial"} should be used.
+#' @param prior The continuous shrinkage prior distribution over the regression coefficients that is to be used. Options include ridge regression 
+#' (\code{prior="rr"} or \code{prior="ridge"}), lasso regression (\code{prior="lasso"}), horseshoe regression (\code{prior="hs"} or \code{prior="horseshoe"}) and 
+#' horseshoe+ regression (\code{prior="hs+"} or \code{prior="horseshoe+"})
+#' @param n.samples Number of posterior samples to generate.
+#' @param burnin Number of burn-in samples.
+#' @param thin Desired level of thinning.
+#' @param t.dof Degrees of freedom for the Student-t distribution.
+#' @section Details:
+#' Draws a series of samples from the posterior distribution of a linear (Gaussian, Laplace or Student-t) or logistic regression model with specified continuous 
+#' shrinkage prior distribution (ridge regression, lasso, horseshoe and horseshoe+) using Gibbs sampling. The intercept parameter is always included, and is never penalised.
+#' 
+#' While only \code{n.samples} are returned, the total number of samples generated is equal to \code{burnin}+\code{n.samples}*\code{thin}. To generate the samples 
+#' of the regression coefficients, the code will use either Rue's algorithm (when the number of samples is twice the number of covariates) or the algorithm of 
+#' Bhattacharya et al. as appropriate. Factor variables are automatically grouped together and 
+#' additional shrinkage is applied to the set of indicator variables to which they expand.
+#' 
+#' @return An object with S3 class \code{"bayesreg"} containing the results of the sampling process, plus some additional information.
+#' \item{beta}{Posterior samples the regression model coefficients.}
+#' \item{beta0}{Posterior samples of the intercept parameter.}
+#' \item{sigma2}{Posterior samples of the square of the scale parameter; for Gaussian distributed targets this is equal to the variance. For binary targets this is empty.}
+#' \item{mu.beta}{The mean of the posterior samples for the regression coefficients.}
+#' \item{mu.beta0}{The mean of the posterior samples for the intercept parameter.}
+#' \item{mu.sigma2}{The mean of the posterior samples for squared scale parameter.}
+#' \item{tau2}{Posterior samples of the global shrinkage parameter.}
+#' \item{t.stat}{Posterior t-statistics for each regression coefficient.}
+#' \item{var.ranks}{Ranking of the covariates by their importance, with "1" denoting the most important covariate.}
+#' \item{log.l}{The log-likelihood at the posterior means of the model parameters}
+#' \item{waic}{The Widely Applicable Information Criterion (WAIC) score for the model}
+#' \item{waic.dof}{The effective degrees-of-freedom of the model, as estimated by the WAIC.}
+#' The returned object also stores the parameters/options used to run \code{bayesreg}:
+#' \item{formula}{The object of type "\code{\link{formula}}" describing the fitted model.}
+#' \item{model}{The distribution of the target (y) variable.}
+#' \item{prior}{The shrinkage prior used to fit the model.}
+#' \item{n.samples}{The number of samples generated from the posterior distribution.}
+#' \item{burnin}{The number of burnin samples that were generated.}
+#' \item{thin}{The level of thinning.}
+#' \item{n}{The sample size of the data used to fit the model.}
+#' \item{p}{The number of covariates in the fitted model.}
+#' 
+#' @references 
+#' 
+#' Makalic, E. & Schmidt, D. F.
+#' High-Dimensional Bayesian Regularised Regression with the BayesReg Package
+#' arXiv:1611.06649 [stat.CO], 2016 \url{https://arxiv.org/pdf/1611.06649.pdf}
+#' 
+#' Park, T. & Casella, G. 
+#' The Bayesian Lasso 
+#' Journal of the American Statistical Association, Vol. 103, pp. 681-686, 2008
+#' 
+#' Carvalho, C. M.; Polson, N. G. & Scott, J. G. 
+#' The horseshoe estimator for sparse signals 
+#' Biometrika, Vol. 97, 465-480, 2010
+#' 
+#' Makalic, E. & Schmidt, D. F. 
+#' A Simple Sampler for the Horseshoe Estimator 
+#' IEEE Signal Processing Letters, Vol. 23, pp. 179-182, 2016 \url{https://arxiv.org/pdf/1508.03884v4.pdf}
+#' 
+#' Bhadra, A.; Datta, J.; Polson, N. G. & Willard, B. 
+#' The Horseshoe+ Estimator of Ultra-Sparse Signals 
+#' Bayesian Analysis, 2016
+#' 
+#' Polson, N. G.; Scott, J. G. & Windle, J. 
+#' Bayesian inference for logistic models using Polya-Gamma latent variables 
+#' Journal of the American Statistical Association, Vol. 108, 1339-1349, 2013
+#' 
+#' Rue, H. 
+#' Fast sampling of Gaussian Markov random fields 
+#' Journal of the Royal Statistical Society (Series B), Vol. 63, 325-338, 2001
+#' 
+#' Bhattacharya, A.; Chakraborty, A. & Mallick, B. K. 
+#' Fast sampling with Gaussian scale-mixture priors in high-dimensional regression 
+#' arXiv:1506.04778, 2016
+#' @note
+#' To cite this toolbox please reference: 
+#'   
+#'   Makalic, E. & Schmidt, D. F.
+#' High-Dimensional Bayesian Regularised Regression with the BayesReg Package
+#' arXiv:1611.06649 [stat.CO], 2016 \url{https://arxiv.org/pdf/1611.06649.pdf}
+#' 
+#' A MATLAB implementation of the bayesreg function is also available from:
+#' 
+#' \url{https://au.mathworks.com/matlabcentral/fileexchange/60823-bayesian-penalized-regression-with-continuous-shrinkage-prior-densities}
+#' @seealso The prediction function \code{\link{predict.bayesreg}} and summary function \code{\link{summary.bayesreg}}
+#' @examples 
+#' # -----------------------------------------------------------------
+#' # Example 1: Gaussian regression
+#' X = matrix(rnorm(100*20),100,20)
+#' b = matrix(0,20,1)
+#' b[1:5] = c(5,4,3,2,1)
+#' y = X %*% b + rnorm(100, 0, 1)
+#' 
+#' df <- data.frame(X,y)
+#' rv.lm <- lm(y~.,df)                        # Regular least-squares
+#' summary(rv.lm)
+#' 
+#' rv.hs <- bayesreg(y~.,df,prior="hs")       # Horseshoe regression
+#' rv.hs.s <- summary(rv.hs)
+#' 
+#' # Expected squared prediction error for least-squares
+#' coef_ls = coef(rv.lm)
+#' as.numeric(sum( (as.matrix(coef_ls[-1]) - b)^2 ) + coef_ls[1]^2)
+#' 
+#' # Expected squared prediction error for horseshoe
+#' as.numeric(sum( (rv.hs$mu.beta - b)^2 ) + rv.hs$mu.beta0^2)
+#' 
+#' 
+#' # -----------------------------------------------------------------
+#' # Example 2: Gaussian v Student-t robust regression
+#' X = 1:10;
+#' y = c(-0.6867, 1.7258, 1.9117, 6.1832, 5.3636, 7.1139, 9.5668, 10.0593, 11.4044, 6.1677);
+#' df = data.frame(X,y)
+#' 
+#' # Gaussian ridge
+#' rv.G <- bayesreg(y~., df, model = "gaussian", prior = "ridge", n.samples = 1e3)
+#' 
+#' # Student-t ridge
+#' rv.t <- bayesreg(y~., df, model = "t", prior = "ridge", t.dof = 5, n.samples = 1e3)
+#' 
+#' # Plot the different estimates with credible intervals
+#' plot(df$X, df$y, xlab="x", ylab="y")
+#' 
+#' yhat_G <- predict(rv.G, df, bayes.avg=TRUE)
+#' lines(df$X, yhat_G[,1], col="blue", lwd=2.5)
+#' lines(df$X, yhat_G[,3], col="blue", lwd=1, lty="dashed")
+#' lines(df$X, yhat_G[,4], col="blue", lwd=1, lty="dashed")
+#' 
+#' yhat_t <- predict(rv.t, df, bayes.avg=TRUE)
+#' lines(df$X, yhat_t[,1], col="darkred", lwd=2.5)
+#' lines(df$X, yhat_t[,3], col="darkred", lwd=1, lty="dashed")
+#' lines(df$X, yhat_t[,4], col="darkred", lwd=1, lty="dashed")
+#' 
+#' legend(1,11,c("Gaussian","Student-t (dof=5)"),lty=c(1,1),col=c("blue","darkred"),
+#'        lwd=c(2.5,2.5), cex=0.7)
+#' 
+#' \dontrun{
+#'   # -----------------------------------------------------------------
+#' # Example 3: Logistic regression on spambase
+#' data(spambase)
+#'   
+#' # bayesreg expects binary targets to be factors
+#' spambase$is.spam <- factor(spambase$is.spam)
+#' 
+#' # First take a subset of the data (1/10th) for training, reserve the rest for testing
+#' spambase.tr  = spambase[seq(1,nrow(spambase),10),]
+#' spambase.tst = spambase[-seq(1,nrow(spambase),10),]
+#'   
+#' # Fit a model using logistic horseshoe for 2,000 samples
+#' rv <- bayesreg(is.spam ~ ., spambase.tr, model = "logistic", prior = "horseshoe", n.samples = 2e3)
+#'   
+#' # Summarise, sorting variables by their ranking importance
+#' rv.s <- summary(rv,sort.rank=TRUE)
+#'   
+#' # Make predictions about testing data -- get class predictions and class probabilities
+#' y_pred <- predict(rv, spambase.tst, type='class')
+#'   
+#' # Check how well did our predictions did by generating confusion matrix
+#' table(y_pred, spambase.tst$is.spam)
+#'   
+#' # Calculate logarithmic loss on test data
+#' y_prob <- predict(rv, spambase.tst, type='prob')
+#' cat('Neg Log-Like for no Bayes average, posterior mean estimates: ', sum(-log(y_prob[,1])), '\n')
+#' y_prob <- predict(rv, spambase.tst, type='prob', sum.stat="median")
+#' cat('Neg Log-Like for no Bayes average, posterior median estimates: ', sum(-log(y_prob[,1])), '\n')
+#' y_prob <- predict(rv, spambase.tst, type='prob', bayes.avg=TRUE)
+#' cat('Neg Log-Like for Bayes average: ', sum(-log(y_prob[,1])), '\n')
+#' }
+#' @export
+bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1e3, burnin = 1e3, thin = 5, t.dof = 5)
 {
   VERSION = '1.00'
   groups  = NA
@@ -42,10 +212,10 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', nsamples = 1e
   
   # -------------------------------------------------------------------    
   # Process and set up the data from the model formula
-  rv$terms <- terms(x = formula, data = data)
+  rv$terms <- stats::terms(x = formula, data = data)
   
-  mf = model.frame(formula = formula, data = data)
-  rv$targetVar = names(mf)[1]
+  mf = stats::model.frame(formula = formula, data = data)
+  rv$target.var = names(mf)[1]
   if (model == 'logistic')
   {
     # Check to ensure target is a factor
@@ -72,7 +242,26 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', nsamples = 1e
   }
   
   y = mf[,1]
-  X = as.matrix(model.matrix(formula, data=mf))
+  X = stats::model.matrix(formula, data=data)
+  
+  # Assign factors to groups if categorical variables have > 2 levels
+  groups = matrix(NA,ncol(X),1)
+  gnum = 1
+  cn = colnames(X)
+  assign = attr(X, "assign")
+  for (j in 2:ncol(mf))
+  {
+    # If it is a factor, set up the groups as appropriate
+    if (is.factor(mf[,j]) && length(levels(mf[,j]))>2)
+    {
+      groups[(assign==(j-1))] = gnum
+      gnum = gnum+1
+    }
+  }
+  groups = groups[2:length(groups)]
+
+  # Convert to a numeric matrix and drop the target variable
+  X = as.matrix(X)
   X = X[,-1,drop=FALSE]
   
   # 
@@ -100,39 +289,51 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', nsamples = 1e
   
   # -------------------------------------------------------------------
   # Standardise data?
-  stdX = bayesreg.standardise(X)
-  X    = stdX$X
-  XtX  = NA
-  if (model == "gaussian" && p < 1e4)
-  {
-    XtX = t(X) %*% X
-  }
+  std.X = bayesreg.standardise(X)
+  X    = std.X$X
   
   # Initial values
-  ydiff   = 0
-  b0      = 0
-  b       = matrix(0,p,1)
-  omega2  = matrix(1,n,1)
-  sigma2  = 1
+  ydiff    = 0
+  b0       = 0
+  b        = matrix(0,p,1)
+  omega2   = matrix(1,n,1)
+  sigma2   = 1
 
-  tau2    = matrix(1,p,1)
-  xi      = 1
+  tau2     = matrix(1,p,1)
+  xi       = 1
   
-  lambda2 = matrix(1,p,1)
-  nu      = matrix(1,p,1)
+  lambda2  = matrix(1,p,1)
+  nu       = matrix(1,p,1)
 
-  eta2    = matrix(1,p,1)
-  phi     = matrix(1,p,1)
+  eta2     = matrix(1,p,1)
+  phi      = matrix(1,p,1)
 
-  kappa   = y - 1/2
-  z       = y
+  kappa    = y - 1/2
+  z        = y
+
+  # Quantities for computing WAIC 
+  waicProb   = matrix(0,n,1) 
+  waicLProb  = matrix(0,n,1)
+  waicLProb2 = matrix(0,n,1)
   
   # Use Rue's MVN sampling algorithm
   mvnrue = T
+  PrecomputedXtX = F
   if (p/n >= 2)
   {
     # Switch to Bhatta's MVN sampling algorithm
     mvnrue = F
+  }
+  
+  # Precompute XtX?
+  XtX  = NA
+  Xty  = NA
+  
+  if (model == "gaussian" && mvnrue)
+  {
+    XtX = crossprod(X)
+    Xty = crossprod(X,y)
+    PrecomputedXtX = T
   }
 
   # Set up group shrinkage parameters if required
@@ -140,48 +341,52 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', nsamples = 1e
   if (length(groups) > 1)
   {
     ngroups = length(unique(groups))
+    groups[is.na(groups)] = ngroups
     delta2  = matrix(1,ngroups,1)
     chi     = matrix(1,ngroups,1)
+    rho2    = matrix(1,ngroups,1)
+    zeta    = matrix(1,ngroups,1)
+    ngroups = ngroups-1
   }
   else
   {
     ngroups = 1
-    groups  = rep(1,1,p)
+    groups  = matrix(1,1,p)
     delta2  = matrix(1,1,1)
     chi     = matrix(1,1,1)
+    rho2    = matrix(1,1,1)
+    zeta    = matrix(1,1,1)
   }
 
   # Setup return object
-  rv$formula  = formula
-  rv$model    = model
-  rv$prior    = prior
-  rv$nsamples = nsamples
-  rv$burnin   = burnin
-  rv$thin     = thin
-  rv$groups   = groups
-  rv$tdof     = tdof
+  rv$formula   = formula
+  rv$model     = model
+  rv$prior     = prior
+  rv$n.samples = n.samples
+  rv$burnin    = burnin
+  rv$thin      = thin
+  rv$groups    = groups
+  rv$t.dof     = t.dof
   
-  rv$n        = n
-  rv$p        = p
-  rv$tss      = sum((y - mean(y))^2)
+  rv$n         = n
+  rv$p         = p
+  rv$tss       = sum((y - mean(y))^2)
 
-  rv$beta0    = matrix(0,1,nsamples)
-  rv$beta     = matrix(0,p,nsamples)
-  rv$muBeta   = matrix(0,p,1)
-  rv$muBeta0  = matrix(0,1,1)
-  rv$sigma2   = matrix(0,1,nsamples)
-  rv$muSigma2 = matrix(0,1,1)
-  rv$tau2     = matrix(0,1,nsamples)
-  #rv$xi       = matrix(0,1,nsamples)
-  #rv$lambda2  = matrix(0,p,nsamples)
-  #rv$nu       = matrix(0,p,nsamples)
-  #rv$delta2   = matrix(0,ngroups,nsamples)
-  #rv$chi      = matrix(0,ngroups,nsamples)
+  rv$beta0     = matrix(0,1,n.samples)
+  rv$beta      = matrix(0,p,n.samples)
+  rv$mu.beta   = matrix(0,p,1)
+  rv$mu.beta0  = matrix(0,1,1)
+  rv$sigma2    = matrix(0,1,n.samples)
+  rv$mu.sigma2 = matrix(0,1,1)
+  rv$tau2      = matrix(0,1,n.samples)
+  #rv$xi       = matrix(0,1,n.samples)
+  #rv$lambda2  = matrix(0,p,n.samples)
+  #rv$nu       = matrix(0,p,n.samples)
+  #rv$delta2   = matrix(0,ngroups,n.samples)
+  #rv$chi      = matrix(0,ngroups,n.samples)
   
-  rv$tstat    = matrix(0,p,1)
-  
-  class(rv)   = "bayesreg"
-  
+  rv$t.stat    = matrix(0,p,1)
+
   # Print the banner  
   if (display)
   {
@@ -194,39 +399,51 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', nsamples = 1e
   # Main sampling loop
   k    = 0
   iter = 0
-  while (k < nsamples)
+  while (k < n.samples)
   {
     # ===================================================================
-    # Sample regression coefficients
+    # Sample regression coefficients (beta)
     if (model == 'logistic')
     {
       z = kappa * omega2
     }
-    
-    # -------------------------------------------------------------------
-    # Sample b0
-    W       = sum(1 / omega2)
-    muB0    = sum((z - X %*% b) / omega2) / W
-    v       = sigma2 / W
-    b0      = rnorm(1, muB0, sqrt(v))
 
-    # -------------------------------------------------------------------
-    # Sample regression coefficients
-    bs  = bayesreg.sample_beta(X, z, mvnrue, b0, sigma2, tau2, lambda2 * delta2[groups], omega2, XtX)
+    bs  = bayesreg.sample_beta(X, z, mvnrue, b0, sigma2, tau2, lambda2 * delta2[groups], omega2, XtX, Xty, model, PrecomputedXtX)
     muB = bs$m
     b   = bs$x
-    
+ 
     # ===================================================================
-    # Sample the noise scale parameter sigma2
-    muSigma2   = NA
+    # Sample intercept (b0)
+    W         = sum(1 / omega2)
+    e         = y - X %*% b
+    
+    # Non-logistic models
     if (model != 'logistic')
     {
-      e        = y - X %*% b - b0
+      muB0    = sum(e / omega2) / W
+    }
+    else
+    {
+      W       = sum(1 / omega2)
+      muB0    = sum((z-(y-e)) / omega2) / W
+    }
+    v       = sigma2 / W
+    
+    # Sample b0 and update residuals
+    b0      = stats::rnorm(1, muB0, sqrt(v))    
+    e       = e-b0
+
+    # ===================================================================
+    # Sample the noise scale parameter sigma2
+    mu.sigma2   = NA
+    if (model != 'logistic')
+    {
+      #e         = y - X %*% b - b0
       shape    = (n + p)/2
       scale    = sum( (e^2 / omega2)/2 ) + sum( (b^2 / delta2[groups] / lambda2 / tau2)/2 )
-      sigma2   = 1/rgamma(1, shape=shape, scale=1/scale)
+      sigma2   = 1/stats::rgamma(1, shape=shape, scale=1/scale)
       
-      muSigma2 = scale / (shape-1)
+      mu.sigma2 = scale / (shape-1)
     }
     
     
@@ -237,7 +454,7 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', nsamples = 1e
     # Laplace
     if (model == 'laplace')
     {
-      e = y - X %*% b - b0
+      #e = y - X %*% b - b0
       mu = sqrt(2 * sigma2 / e^2)
       omega2 = 1 / bayesreg.rinvg(mu,1/2)
     }
@@ -246,59 +463,77 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', nsamples = 1e
     # Student-t
     if (model == 't')
     {
-      e = y - X %*% b - b0
-      shape = (tdof+1)/2
-      scale = (e^2/sigma2+tdof)/2
-      omega2 = 1 / rgamma(n, shape=shape, scale=1/scale)
+      #e = y - X %*% b - b0
+      shape = (t.dof+1)/2
+      scale = (e^2/sigma2+t.dof)/2
+      omega2 = as.matrix(1 / stats::rgamma(n, shape=shape, scale=1/scale), n, 1)
     }
 
     # -------------------------------------------------------------------
     # Logistic
     if (model == 'logistic')
     {
-      omega2 = 1 / rpg.devroye(num = n, n = 1, z = b0 + X %*% b)
+      #omega2 = 1 / rpg.devroye(num = n, n = 1, z = b0 + X %*% b)
+      omega2 = as.matrix(1 / pgdraw::pgdraw(1, b0+X%*%b), n, 1)
     }
 
     # ===================================================================
     # Sample the global shrinkage parameter tau2 (and L.V. xi)
-    shape = (p+1)/2
-    scale = 1/xi + sum(b^2 / lambda2 / delta2[groups]) / 2 / sigma2
-    tau2  = 1 / rgamma(1, shape=shape, scale=1/scale)
-
-    # Sample xi
-    scale = 1 + 1/tau2
-    xi    = 1 / rgamma(1, shape=1, scale=1/scale)
+    # hs/hs+/ridge use tau2 ~ C+(0,1)
+    if (prior == 'hs' || prior == 'hs+' || prior == 'rr')
+    {
+      shape = (p+1)/2
+      scale = 1/xi + sum(b^2 / lambda2 / delta2[groups]) / 2 / sigma2
+      tau2  = 1 / stats::rgamma(1, shape=shape, scale=1/scale)
+  
+      # Sample xi
+      scale = 1 + 1/tau2
+      xi    = scale / stats::rexp(1)
+    }
     
+    # Lasso uses tau2 ~ IG(1,1)
+    else if (prior == 'lasso')
+    {
+      shape = p/2+1
+      scale = 1 + sum(b^2 / lambda2 / delta2[groups]) / 2 / sigma2
+      tau2  = 1 / stats::rgamma(1, shape=shape, scale=1/scale)
+    }
     
     # ===================================================================
     # Sample the lambda2's/nu's (if horseshoe, horseshoe+, horseshoe-grouped)
     if (prior == 'hs' || prior == 'hs+' || prior == 'hsge')
     {
-      # Sample lambda2
-      scale   = 1/nu + b^2 / 2 / tau2 / sigma2 / delta2[groups]
-      lambda2 = 1 / rgamma(p, shape=1, scale=1/scale)
-      
       # Sample nu -- horseshoe
       if (prior == 'hs' || prior == 'hsge')
       {
+        # Sample lambda2
+        scale   = 1/nu + b^2 / 2 / tau2 / sigma2 / delta2[groups]
+        lambda2 = scale / stats::rexp(p)
+
         scale = 1 + 1/lambda2
-        nu    = 1 / rgamma(p, shape=1, scale=1/scale)
+        nu    = scale / stats::rexp(p)
       }
       
-      # Horseshoe+
+      # Parameter expanded HS+ sampler
       else if (prior == 'hs+')
       {
+        # Sample lambda2
+        scale   = 1/nu + b^2 / 2 / tau2 / sigma2 / (delta2[groups]*eta2)
+        lambda2 = scale / stats::rexp(p)
+
         # Sample nu
-        scale = 1/eta2 + 1/lambda2
-        nu    = 1 / rgamma(p, shape=1, scale=1/scale)
+        scale = 1 + 1/lambda2
+        nu    = scale / stats::rexp(p)
         
         # Sample eta2
-        scale = 1/nu + 1/phi
-        eta2  = 1 / rgamma(p, shape=1, scale=1/scale)
+        scale =  1/phi + b^2 / 2 / tau2 / sigma2 / (delta2[groups]*lambda2)
+        eta2  = scale / stats::rexp(p)
         
         # Sample phi
         scale = 1 + 1/eta2
-        phi   = 1 / rgamma(p, shape=1, scale=1/scale)
+        phi   = scale / stats::rexp(p)
+        
+        lambda2 = lambda2*eta2
       }
     }
     
@@ -307,14 +542,14 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', nsamples = 1e
     # Sample the lambda2's (if lasso)
     if (prior == 'lasso')
     {
-      mu      = sqrt(2 * sigma2 * tau2 / b^2)
+      mu      = sqrt(2 * sigma2 * tau2 / (b^2 / delta2[groups]))
       lambda2 = 1 / bayesreg.rinvg(mu, 1/2)
     }
     
     
     # ===================================================================
-    # Sample the delta2's (if grouped horseshoe)
-    if (prior == 'hsge' || prior == 'hsg')
+    # Sample the delta2's (if grouped horseshoe, horseshoe+ or lasso)
+    if (ngroups > 1)
     {
       # Sample delta2's
       for (i in 1:ngroups)
@@ -323,14 +558,49 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', nsamples = 1e
         ng = sum(groups == i)
         if (ng > 1)
         {
-          # Sample delta2
-          shape = (ng+1)/2
-          scale = 1 / chi[i] + sum(b[groups==i]^2 / lambda2[groups==i]) / 2 / sigma2 / tau2
-          delta2[i] = 1 / rgamma(1, shape=shape, scale=1/scale)
+          # Grouped horseshoe/horseshoe+
+          if (prior == 'hs')
+          {  
+            # Sample delta2
+            shape = (ng+1)/2
+            scale = 1 / chi[i] + sum((b[groups==i]^2) / lambda2[groups==i]) / 2 / sigma2 / tau2
+            delta2[i] = 1 / stats::rgamma(1, shape=shape, scale=1/scale)
+  
+            # Sample chi
+            scale  = 1 + 1/delta2[i]
+            chi[i] = 1 / stats::rgamma(1, shape=1, scale=1/scale)
+          }
           
-          # Sample chi
-          scale  = 1 + 1/delta2[i]
-          chi[i] = 1 / rgamma(1, shape=1, scale=1/scale)
+          # Grouped horseshoe+
+          else if (prior == 'hs+')
+          {
+            # Sample delta2
+            shape = (ng+1)/2
+            scale = 1 / chi[i] + sum((b[groups==i]^2) / 2 / sigma2 / tau2 / lambda2[groups==i] / rho2[i])
+            delta2[i] = 1 / stats::rgamma(1, shape=shape, scale=1/scale)
+            
+            # Sample chi
+            scale  = 1 + 1/delta2[i]
+            chi[i] = scale / stats::rexp(1)
+            
+            # Sample rho2
+            shape = (ng+1)/2
+            scale =  1 / zeta[i] + sum((b[groups==i]^2) / 2 / sigma2 / tau2 / lambda2[groups==i] / delta2[i])
+            rho2[i] = 1 / stats::rgamma(1, shape=shape, scale=1/scale)
+            
+            # Sample zeta
+            scale = 1 + 1/rho2[i]
+            zeta[i] = scale / stats::rexp(1)
+            
+            delta2[i] = delta2[i]*rho2[i]
+          }
+          
+          # Grouped lasso
+          else if (prior == 'lasso')
+          {
+            mu = sqrt(2 * sigma2 * tau2 / sum((b[groups==i]^2)/lambda2[groups==i]))
+            delta2[i] = 1 / bayesreg.rinvg(mu, 0.5)
+          }
         }
       }
     }
@@ -341,29 +611,44 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', nsamples = 1e
     if (iter > burnin)
     {
       # thinning
-      if (!(iter%%thin))
+      if (!(iter %% thin))
       {
+        # Store posterior samples
         k = k+1
-        rv$beta0[k]    = b0
-        rv$beta[,k]    = b
-        rv$muBeta      = rv$muBeta + muB
-        rv$muBeta0     = rv$muBeta0 + muB0
-        rv$sigma2[k]   = sigma2
-        rv$muSigma2    = rv$muSigma2 + muSigma2
-        rv$tau2[k]     = tau2
+        rv$beta0[k]     = b0
+        rv$beta[,k]     = b
+        rv$mu.beta      = rv$mu.beta + muB
+        rv$mu.beta0     = rv$mu.beta0 + muB0
+        rv$sigma2[k]    = sigma2
+        rv$mu.sigma2    = rv$mu.sigma2 + mu.sigma2
+        rv$tau2[k]      = tau2
         #rv$xi[k]       = xi
         #rv$lambda2[,k] = lambda2
         #rv$nu[,k]      = nu
         #rv$delta2[,k]  = delta2
         #rv$chi[,k]     = chi
+        
+        # Neg-log-likelihood scores for WAIC
+        if (model != 'logistic')
+        {
+          rv.ll = bayesreg.linregnlike_e(model, e, sigma2, t.dof = t.dof)
+        }
+        else
+        {
+          rv.ll = bayesreg.logregnlike_eta(y, y-e)
+        }
+        
+        waicProb   = waicProb + rv.ll$prob
+        waicLProb  = waicLProb + rv.ll$negll
+        waicLProb2 = waicLProb2 + rv.ll$negll^2
       }
     }
   }
   
   #
-  rv$muBeta   = rv$muBeta / nsamples
-  rv$muBeta0  = rv$muBeta0 / nsamples
-  rv$muSigma2 = rv$muSigma2 / nsamples
+  rv$mu.beta   = rv$mu.beta / n.samples
+  rv$mu.beta0  = rv$mu.beta0 / n.samples
+  rv$mu.sigma2 = rv$mu.sigma2 / n.samples
   
   # ===================================================================
   # Rank features, if requested
@@ -373,8 +658,8 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', nsamples = 1e
     ranks = bayesreg.bfr(rv)
 
     # Determine the 75th percentile
-    rv$varranks = rep(NA,p+1)
-    q = apply(ranks,1,function(x) quantile(x,0.75))
+    rv$var.ranks = rep(NA,p+1)
+    q = apply(ranks,1,function(x) stats::quantile(x,0.75))
     O = sort(q,index.return = T)
     O = O$ix
     
@@ -394,61 +679,70 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', nsamples = 1e
           k = k+1
         }
       }
-      rv$varranks[O[i]] = j
+      rv$var.ranks[O[i]] = j
     }
   }
   else
   {
-    rv$varranks = rep(NA, p+1)
+    rv$var.ranks = rep(NA, p+1)
   }
   
   # ===================================================================
   # Compute the t-statistics
   for (i in 1:p)
   {
-    rv$tstat[i] = rv$muBeta[i] / sd(rv$beta[i,])
+    rv$t.stat[i] = rv$mu.beta[i] / stats::sd(rv$beta[i,])
   }
+  
+  # ===================================================================
+  # Compute other model statistics
+  rv$yhat    = as.matrix(X) %*% matrix(rv$mu.beta, p, 1) + as.numeric(rv$mu.beta0)
+  rv$r2      = 1 - sum((y - rv$yhat)^2)/rv$tss
+  rv$rootmse = mean((y - rv$yhat)^2)
 
   # ===================================================================
-  # Compute DIC score and log-likelihoods
-  rv$dic   = bayesreg.computedic(model, X, y, rv$beta, rv$beta0, tdof, rv);    
+  # Compute WAIC score and log-likelihoods
+  rv$waic.dof = sum(waicLProb2/n.samples) - sum((waicLProb/n.samples)^2)
+  rv$waic     = -sum(log(waicProb/n.samples)) + rv$waic.dof
+  
   if (model == 'logistic')
   {
-    rv$logl  = -bayesreg.logregnlike(X, y, rv$muBeta, rv$muBeta0)
-    rv$logl0 = -bayesreg.logregnlike(X, y, matrix(0,p,1), log(sum(y)/(n-sum(y))))
+    rv$log.l  = -bayesreg.logregnlike(X, y, rv$mu.beta, rv$mu.beta0)
+    rv$log.l0 = -bayesreg.logregnlike(X, y, matrix(0,p,1), log(sum(y)/(n-sum(y))))
   }
   else
   {
-    rv$logl  = -bayesreg.linregnlike(model, as.matrix(X), as.matrix(y), rv$muBeta, rv$muBeta0, rv$muSigma2, rv$tdof)
+    rv$log.l  = -bayesreg.linregnlike(model, as.matrix(X), as.matrix(y), rv$mu.beta, rv$mu.beta0, rv$mu.sigma2, rv$t.dof)
   }
 
   # ===================================================================
   # Rescale the coefficients
   if (p == 1)
   {
-    rv$beta  <- t(as.matrix(apply(t(rv$beta), 1, function(x)(x / stdX$stdX))))
+    rv$beta  <- t(as.matrix(apply(t(rv$beta), 1, function(x)(x / std.X$std.X))))
   }
   else
   {
-    rv$beta  <- as.matrix(apply(t(rv$beta), 1, function(x)(x / stdX$stdX)))
+    rv$beta  <- as.matrix(apply(t(rv$beta), 1, function(x)(x / std.X$std.X)))
   }
-  rv$beta0 <- rv$beta0 - stdX$meanX %*% rv$beta
+  rv$beta0 <- rv$beta0 - std.X$mean.X %*% rv$beta
   
-  rv$muBeta  <- rv$muBeta / t(stdX$stdX)
-  rv$muBeta0 <- rv$muBeta0 - stdX$meanX %*% rv$muBeta
+  rv$mu.beta  <- rv$mu.beta / t(std.X$std.X)
+  rv$mu.beta0 <- rv$mu.beta0 - std.X$mean.X %*% rv$mu.beta
 
-  rv$stdX = stdX
+  rv$std.X = std.X
   
   # ===================================================================
   # Compute effective sample sizes
-  rv$essfrac = rep(NA, p)
+  rv$ess.frac = rep(NA, p)
   for (i in 1:p)
   {
     e = bayesreg.ess(rv$beta[i,])
-    rv$essfrac[i] = e$ESSfrac
+    rv$ess.frac[i] = e$ess.frac
   }
-  rv$essfrac[ rv$essfrac > 100 ] = 100
+  rv$ess.frac[ rv$ess.frac > 100 ] = 100
 
+  class(rv) = "bayesreg"
   return(rv)
 }
 
@@ -462,9 +756,10 @@ bayesreg.sample_beta0 <- function(X, z, b, sigma2, omega2)
   rv$muB0 = sum((z - X %*% b) / omega2) / W
   v       = sigma2 / W
   
-  rv$b0  = rnorm(1, rv$muB0, sqrt(v))
-  
-  return(rv)
+  rv$b0  = stats::rnorm(1, rv$muB0, sqrt(v))
+
+  # Done
+  rv
 }
 
 
@@ -475,7 +770,7 @@ bayesreg.ess <- function(x)
   n = length(x)
   s = min(c(n-1, 2000))
   
-  g = acf(x, s, plot=F)
+  g = stats::acf(x, s, plot=F)
   G = as.vector(g$acf[2:(s-1)]) + as.vector(g$acf[3:s])
   G = G < 0
   for (i in 1:length(G))
@@ -494,7 +789,7 @@ bayesreg.ess <- function(x)
   ACT = V / g$acf[1]
   rv = list()
   rv$ESS = n/ ACT
-  rv$ESSfrac = rv$ESS / n
+  rv$ess.frac = rv$ESS / n
   
   return(rv)
 }
@@ -504,9 +799,9 @@ bayesreg.ess <- function(x)
 # Bayesian Feature Ranking
 bayesreg.bfr <- function(rv)
 {
-  ranks = matrix(0, rv$p, rv$nsamples)
+  ranks = matrix(0, rv$p, rv$n.samples)
   
-  for (i in 1:rv$nsamples)
+  for (i in 1:rv$n.samples)
   {
     r = sort(-abs(rv$beta[,i]), index.return = T)
     ranks[r$ix,i] = 1:rv$p
@@ -516,10 +811,139 @@ bayesreg.bfr <- function(rv)
 }   
 
 
-# ============================================================================================================================
-# predict function for bayesreg models
-predict.bayesreg <- function(object, df, type = "linpred", bayesavg = FALSE, sum.stat = "mean", ...)
+#' Predict values based on Bayesian penalised regression (\code{\link{bayesreg}}) models.
+#'
+#' @title Prediction method for Bayesian penalised regression (\code{bayesreg}) models
+#' @param object an object of class \code{"bayesreg"} created as a result of a call to \code{\link{bayesreg}}.
+#' @param newdata A data frame providing the variables from which to produce predictions.
+#' @param type The type of predictions to produce; if \code{type="linpred"} it will return the linear predictor for both binary 
+#' and continuous data. For binary data, if \code{type="prob"} it will return predictive probability estimates, and if \code{type="class"} 
+#' and the data is binary, it will return the best guess at the class of the target variable.
+#' @param bayes.avg logical; whether to produce predictions using Bayesian averaging.
+#' @param sum.stat The type of summary statistic to use; either \code{sum.stat="mean"} or \code{sum.stat="median"}.
+#' @param ... Further arguments passed to or from other methods.
+#' @section Details:
+#' \code{predict.bayesreg} produces predicted values using variables from the specified data frame. The type of predictions produced 
+#' depend on the value of the parameter \code{type}.
+#'
+#' If \code{type="linpred"}, the predictions that are returned will be the value of the linear predictor formed from the model 
+#' coefficients and the provided data. 
+#' 
+#' If \code{type="prob"}, the predictions will be probabilities. If the specified data frame includes a column with the same name as the 
+#' target variable on which the model was created, the predictions will then be the probability density values for these target values. 
+#' For binary data, if the specified data frame does not include a column with the same name as the target variable, the predictions will 
+#' be the probability of the target being equal to the second level of the factor variable. 
+#' 
+#' If \code{type="class"} and the target variable is binary, the predictions will be the most likely class.
+#' 
+#' If \code{bayes.avg} is \code{FALSE} the predictions will be produced by using a summary of the posterior samples of the coefficients 
+#' and scale parameters as estimates for the model. If \code{bayes.avg} is \code{TRUE}, the predictions will be produced by posterior 
+#' averaging over the posterior samples of the coefficients and scale parameters, allowing the uncertainty in the estimation process to 
+#' be explicitly taken into account in the prediction process. 
+#' 
+#' If \code{sum.stat="mean"} and \code{bayes.avg} is \code{FALSE}, the mean of the posterior samples will be used as point estimates for
+#' making predictions. Likewise, if \code{sum.stat="median"} and \code{bayes.avg} is \code{FALSE}, the co-ordinate wise posterior medians 
+#' will be used as estimates for making predictions. If \code{bayes.avg} is \code{TRUE} and \code{type!="prob"}, the posterior mean 
+#' (median) of the predictions from each of the posterior samples will be used as predictions. The value of \code{sum.stat} has no effect 
+#' if \code{type="prob"}.
+#' @return 
+#' \code{predict.bayesreg} produces a vector or matrix of predictions of the specified type. If \code{bayes.avg} is 
+#' \code{FALSE} a matrix with a single column \code{pred} is returned, containing the predictions.
+#'
+#' If \code{bayes.avg} is \code{TRUE}, three additional columns are returned: \code{se(pred)}, which contains 
+#' standard errors for the predictions, and \code{CI 2.5\%} and \code{CI 97.5\%} which contain 95\% credible intervals for the predictions.
+#' @seealso The model fitting function \code{\link{bayesreg}} and summary function \code{\link{summary.bayesreg}}
+#' @examples
+#' 
+#' # -----------------------------------------------------------------
+#' # Example 1: Fitting linear models to data and generating credible intervals
+#' X = 1:10;
+#' y = c(-0.6867, 1.7258, 1.9117, 6.1832, 5.3636, 7.1139, 9.5668, 10.0593, 11.4044, 6.1677);
+#' df = data.frame(X,y)
+#' 
+#' # Gaussian ridge
+#' rv.L <- bayesreg(y~., df, model = "laplace", prior = "ridge", n.samples = 1e3)
+#' 
+#' # Plot the different estimates with credible intervals
+#' plot(df$X, df$y, xlab="x", ylab="y")
+#' 
+#' yhat <- predict(rv.L, df, bayes.avg=TRUE)
+#' lines(df$X, yhat[,1], col="blue", lwd=2.5)
+#' lines(df$X, yhat[,3], col="blue", lwd=1, lty="dashed")
+#' lines(df$X, yhat[,4], col="blue", lwd=1, lty="dashed")
+#' yhat <- predict(rv.L, df, bayes.avg=TRUE, sum.stat = "median")
+#' lines(df$X, yhat[,1], col="red", lwd=2.5)
+#' 
+#' legend(1,11,c("Posterior Mean (Bayes Average)","Posterior Median (Bayes Average)"),
+#'        lty=c(1,1),col=c("blue","red"),lwd=c(2.5,2.5), cex=0.7)
+#' 
+#' 
+#' # -----------------------------------------------------------------
+#' # Example 2: Predictive density for continuous data
+#' X = 1:10;
+#' y = c(-0.6867, 1.7258, 1.9117, 6.1832, 5.3636, 7.1139, 9.5668, 10.0593, 11.4044, 6.1677);
+#' df = data.frame(X,y)
+#' 
+#' # Gaussian ridge
+#' rv.G <- bayesreg(y~., df, model = "gaussian", prior = "ridge", n.samples = 1.5e3)
+#' 
+#' # Produce predictive density for X=2
+#' df.tst = data.frame(y=seq(-7,12,0.01),X=2)
+#' prob_noavg_mean <- predict(rv.G, df.tst, bayes.avg=FALSE, type="prob", sum.stat = "mean")
+#' prob_noavg_med  <- predict(rv.G, df.tst, bayes.avg=FALSE, type="prob", sum.stat = "median")
+#' prob_avg        <- predict(rv.G, df.tst, bayes.avg=TRUE, type="prob")
+#' 
+#' # Plot the density
+#' plot(NULL, xlim=c(-7,12), ylim=c(0,0.14), xlab="y", ylab="p(y)")
+#' lines(df.tst$y, prob_noavg_mean[,1],lwd=1.5)
+#' lines(df.tst$y, prob_noavg_med[,1], col="red",lwd=1.5)
+#' lines(df.tst$y, prob_avg[,1], col="green",lwd=1.5)
+#' 
+#' legend(-7,0.14,c("Mean (no averaging)","Median (no averaging)","Bayes Average"),
+#'        lty=c(1,1,1),col=c("black","red","green"),lwd=c(1.5,1.5,1.5), cex=0.7)
+#' 
+#' title('Predictive densities for X=2')
+#' 
+#' \dontrun{
+#' # -----------------------------------------------------------------
+#' # Example 3: Logistic regression on spambase
+#' data(spambase)
+#'  
+#' # bayesreg expects binary targets to be factors
+#' spambase$is.spam <- factor(spambase$is.spam)
+#'   
+#' # First take a subset of the data (1/10th) for training, reserve the rest for testing
+#' spambase.tr  = spambase[seq(1,nrow(spambase),10),]
+#' spambase.tst = spambase[-seq(1,nrow(spambase),10),]
+#'   
+#' # Fit a model using logistic horseshoe for 2,000 samples
+#' rv <- bayesreg(is.spam ~ ., spambase.tr, model = "logistic", prior = "horseshoe", n.samples = 2e3)
+#'   
+#' # Summarise, sorting variables by their ranking importance
+#' rv.s <- summary(rv,sort.rank=TRUE)
+#' 
+#' # Make predictions about testing data -- get class predictions and class probabilities
+#' y_pred <- predict(rv, spambase.tst, type='class')
+#' y_prob <- predict(rv, spambase.tst, type='prob')
+#' 
+#' # Check how well our predictions did by generating confusion matrix
+#' table(y_pred, spambase.tst$is.spam)
+#' 
+#' # Calculate logarithmic loss on test data
+#' y_prob <- predict(rv, spambase.tst, type='prob')
+#' cat('Neg Log-Like for no Bayes average, posterior mean estimates: ', sum(-log(y_prob[,1])), '\n')
+#' y_prob <- predict(rv, spambase.tst, type='prob', sum.stat="median")
+#' cat('Neg Log-Like for no Bayes average, posterior median estimates: ', sum(-log(y_prob[,1])), '\n')
+#' y_prob <- predict(rv, spambase.tst, type='prob', bayes.avg=TRUE)
+#' cat('Neg Log-Like for Bayes average: ', sum(-log(y_prob[,1])), '\n')
+#' }
+#' @S3method predict bayesreg
+#' @method predict bayesreg
+#' @export
+predict.bayesreg <- function(object, newdata, type = "linpred", bayes.avg = FALSE, sum.stat = "mean", ...)
 {
+  if (!inherits(object,"bayesreg")) stop("Not a valid Bayesreg object")
+
   # Error checking 
   if (sum.stat != "mean" && sum.stat != "median")
   {
@@ -535,26 +959,26 @@ predict.bayesreg <- function(object, df, type = "linpred", bayesavg = FALSE, sum
   }
   
   # Build the fully specified formula using the covariates that were fitted
-  f <- as.formula(paste("~",paste(attr(object$terms,"term.labels"),collapse="+")))
+  f <- stats::as.formula(paste("~",paste(attr(object$terms,"term.labels"),collapse="+")))
   
   # Extract the design matrix
-  X = model.matrix(f, data=df)
+  X = stats::model.matrix(f, data=newdata)
   X = as.matrix(X[,-1])
   n = nrow(X)
   p = ncol(X)
 
   # Get y-data if it has been passed and is not NA
-  if (!any(names(df) == object$targetVar) && type == "prob" && object$model != "logistic")
+  if (!any(names(newdata) == object$target.var) && type == "prob" && object$model != "logistic")
   {
-    stop("You must provide a column of targets called '", object$targetVar, "' to predict probabilities for continuous distributions.")
+    stop("You must provide a column of targets called '", object$target.var, "' to predict probabilities for continuous distributions.")
   }
   
-  if (any(names(df) == object$targetVar) && type == "prob")
+  if (any(names(newdata) == object$target.var) && type == "prob")
   {
-    y <- as.matrix(df[object$targetVar])
+    y <- as.matrix(newdata[object$target.var])
     if (any(is.na(y)) && type == "prob" && object$model != "logistic")
     {
-      stop("Missing values in the target variable '", object$targetVar, "' not allowed when predicting probabilities for continuous distributions.")
+      stop("Missing values in the target variable '", object$target.var, "' not allowed when predicting probabilities for continuous distributions.")
     }
   }
   else {
@@ -562,18 +986,18 @@ predict.bayesreg <- function(object, df, type = "linpred", bayesavg = FALSE, sum
   }
 
   # Compute the linear predictor
-  if (bayesavg == F)
+  if (bayes.avg == F)
   {
     #browser()
     if (sum.stat == "median")
     {
-      medBeta  = apply(object$beta,1,function(x) quantile(x,c(0.5)))
-      medBeta0 = quantile(object$beta0,0.5)
+      medBeta  = apply(object$beta,1,function(x) stats::quantile(x,c(0.5)))
+      medBeta0 = stats::quantile(object$beta0,0.5)
       yhat = X %*% as.vector(medBeta) + as.numeric(medBeta0)
     }
     else
     {
-      yhat = X %*% as.vector(object$muBeta) + as.numeric(object$muBeta0)
+      yhat = X %*% as.vector(object$mu.beta) + as.numeric(object$mu.beta0)
     }
   }
   else
@@ -609,14 +1033,14 @@ predict.bayesreg <- function(object, df, type = "linpred", bayesavg = FALSE, sum
     # Gaussian probabilities
     if (object$model == "gaussian")
     {
-      if (bayesavg == T)
+      if (bayes.avg == T)
       {
         yhat <- (as.matrix(apply(yhat, 2, function(x) (x - y)^2 )))
         yhat <- t(as.matrix(apply(yhat, 1, function(x) (1/2)*log(2*pi*object$sigma2) + x/2/object$sigma2)))
       }
       else
       {
-        scale = as.numeric(object$muSigma2)
+        scale = as.numeric(object$mu.sigma2)
         yhat <- (1/2)*log(2*pi*scale) + (yhat - y)^2/2/scale
       }
     }
@@ -624,7 +1048,7 @@ predict.bayesreg <- function(object, df, type = "linpred", bayesavg = FALSE, sum
     # Laplace probabilities
     else if (object$model == "laplace")
     {
-      if (bayesavg == T)
+      if (bayes.avg == T)
       {
         yhat <- as.matrix(apply(yhat, 2, function(x) abs(x - y) ))
         scale <- as.matrix(sqrt(object$sigma2/2))
@@ -632,7 +1056,7 @@ predict.bayesreg <- function(object, df, type = "linpred", bayesavg = FALSE, sum
       }
       else
       {
-        scale <- sqrt(as.numeric(object$muSigma2)/2)
+        scale <- sqrt(as.numeric(object$mu.sigma2)/2)
         yhat <- log(2*scale) + abs(yhat - y)/scale
       }
     }
@@ -640,8 +1064,8 @@ predict.bayesreg <- function(object, df, type = "linpred", bayesavg = FALSE, sum
     # Student-t probabilities
     else
     {
-      nu = object$tdof;
-      if (bayesavg == T)
+      nu = object$t.dof;
+      if (bayes.avg == T)
       {
         yhat <- (as.matrix(apply(yhat, 2, function(x) x - y)))^2
         scale = as.matrix(object$sigma2)
@@ -649,7 +1073,7 @@ predict.bayesreg <- function(object, df, type = "linpred", bayesavg = FALSE, sum
       }
       else
       {
-        yhat <- (-lgamma((nu+1)/2) + lgamma(nu/2) + log(pi*nu*as.numeric(object$muSigma2))/2) + (nu+1)/2*log(1 + 1/nu*(yhat-y)^2/as.numeric(object$muSigma2))
+        yhat <- (-lgamma((nu+1)/2) + lgamma(nu/2) + log(pi*nu*as.numeric(object$mu.sigma2))/2) + (nu+1)/2*log(1 + 1/nu*(yhat-y)^2/as.numeric(object$mu.sigma2))
       }
     }
     
@@ -657,13 +1081,13 @@ predict.bayesreg <- function(object, df, type = "linpred", bayesavg = FALSE, sum
   }
 
   # If not class labels and averaging, also compute SE's and CI's
-  if (type != "class" && bayesavg == T)
+  if (type != "class" && bayes.avg == T)
   {
     # Standard errors
-    se = apply(yhat,1,sd)
+    se = apply(yhat,1,stats::sd)
     
     # 95% CIs
-    CI = apply(yhat,1,function(x) quantile(x,c(0.05,0.5,0.95)))
+    CI = apply(yhat,1,function(x) stats::quantile(x,c(0.025,0.5,0.975)))
     
     # Store results
     r = matrix(0, n, 4)
@@ -678,7 +1102,7 @@ predict.bayesreg <- function(object, df, type = "linpred", bayesavg = FALSE, sum
     r[,2] = as.matrix(se)
     r[,3] = as.matrix(CI[1,])
     r[,4] = as.matrix(CI[3,])
-    colnames(r) <- c("pred","se(pred)","CI 5%","CI 95%")
+    colnames(r) <- c("pred","se(pred)","CI 2.5%","CI 97.5%")
   }
   
   # Otherwise just return the class labels
@@ -695,10 +1119,79 @@ predict.bayesreg <- function(object, df, type = "linpred", bayesavg = FALSE, sum
 }
 
 
-# ============================================================================================================================
-# summary function for bayesreg models
-summary.bayesreg <- function(object, sortrank = FALSE, displayor = FALSE, ...)
+#' \code{summary} method for Bayesian regression models fitted using \code{\link{bayesreg}}.
+#'
+#' @title Summarization method for Bayesian penalised regression (\code{bayesreg}) models
+#' @param object An object of class \code{"bayesreg"} created as a result of a call to \code{\link{bayesreg}}.
+#' @param sort.rank logical; if \code{TRUE}, the variables in the summary will be sorted by their importance as determined by their rank estimated by 
+#' the Bayesian feature ranking algorithm.
+#' @param display.OR logical; if \code{TRUE}, the variables will be summarised in terms of their cross-sectional odds-ratios rather than their 
+#' regression coefficients (logistic regression only).
+#' @param ... Further arguments passed to or from other methods.
+#' @section Details:
+#' The \code{summary} method computes a number of summary statistics and displays these for each variable in a table, along 
+#' with suitable header information.
+#' 
+#' For continuous target variables, the header information includes a posterior estimate of the standard deviation of the random disturbances (errors), the \eqn{R^2} statistic
+#' and the Widely applicable information criterion (WAIC) statistic. For logistic regression models, the header information includes the negative 
+#' log-likelihood at the posterior mean of the regression coefficients, the pseudo \eqn{R^2} score and the WAIC statistic.
+#' 
+#' The main table summarises properties of the coefficients for each of the variables. The first column is the variable name. The 
+#' second and third columns are either the mean and standard error of the coefficients, or the median and standard error of the 
+#' cross-sectional odds-ratios if \code{display.OR=TRUE}. 
+#' 
+#' The fourth and fifth columns are the 95\% credible intervals of the coefficients (odds-ratios). The sixth column displays the 
+#' posterior \eqn{t}-statistic, calculated as the ratio of the posterior mean on the posterior standard deviation for the coefficient. 
+#' The seventh column is the importance rank assigned to the variable by the Bayesian feature ranking algorithm. 
+#' 
+#' In betwen the seventh and eighth columns are up to two asterisks indicating significance; a variable scores a first asterisk if 
+#' the 75\% credible interval does not include zero, and scores a second asterisk if the 95\% credible interval does not include zero. The 
+#' final column gives an estimate of the effective sample size for the variable, ranging from 0 to 100, which indicates how much 
+#' autocorrelation is present in the sample chain for this variable (smaller values indicating high levels of autocorrelation).
+#' @return 
+#' Returns an object with the following fields:
+#'   
+#' \item{log.l}{The log-likelihood of the model at the posterior mean estimates of the regression coefficients.}
+#' \item{waic}{The Widely Applicable Information Criterion (WAIC) score of the model.}
+#' \item{waic.dof}{The effective degrees-of-freedom of the model, as estimated by the WAIC.}
+#' \item{r2}{For non-binary data, the R^2 statistic.}
+#' \item{sd.error}{For non-binary data, the estimated standard deviation of the errors.}
+#' \item{p.r2}{For binary data, the pseudo-R^2 statistic.}
+#' \item{mu.coef}{The posterior means of the regression coefficients.}
+#' \item{se.coef}{The posterior standard deviations of the regression coefficients.}
+#' \item{CI.coef}{The posterior 95\% credible interval for the regression coefficients.}
+#' \item{med.OR}{For binary data, the posterior median of the cross-sectional odds-ratios.}
+#' \item{se.OR}{For binary data, the posterior standard deviation of the cross-sectional odds-ratios.}
+#' \item{CI.OR}{For binary data, the posterior 95\% credible interval for the cross-sectional odds-ratios.}
+#' \item{t.stat}{The posterior t-statistic for the coefficients.}
+#' \item{n.stars}{The significance level for the variable (see above).}
+#' \item{rank}{The variable importance rank as estimated by the Bayesian feature ranking algorithm (see above).}
+#' \item{ESS}{The effective sample size for the variable.}
+#' \item{log.l0}{For binary data, the log-likelihood of the null model (i.e., with only an intercept).}
+#' @seealso The model fitting function \code{\link{bayesreg}} and prediction function \code{\link{predict.bayesreg}}.
+#' @examples
+#' 
+#' X = matrix(rnorm(100*20),100,20)
+#' b = matrix(0,20,1)
+#' b[1:9] = c(0,0,0,0,5,4,3,2,1)
+#' y = X %*% b + rnorm(100, 0, 1)
+#' df <- data.frame(X,y)
+#' 
+#' rv.hs <- bayesreg(y~.,df,prior="hs")       # Horseshoe regression
+#' 
+#' # Summarise without sorting by variable rank
+#' rv.hs.s <- summary(rv.hs)
+#' 
+#' # Summarise sorting by variable rank
+#' rv.hs.s <- summary(rv.hs, sort.rank = TRUE)
+#'
+#' @S3method summary bayesreg
+#' @method summary bayesreg
+#' @export
+summary.bayesreg <- function(object, sort.rank = FALSE, display.OR = FALSE, ...)
   {
+    if (!inherits(object,"bayesreg")) stop("Not a valid Bayesreg object")
+  
     printf <- function(...) cat(sprintf(...))
     repchar <- function(c, n) paste(rep(c,n),collapse="")
 
@@ -710,11 +1203,17 @@ summary.bayesreg <- function(object, sortrank = FALSE, displayor = FALSE, ...)
     rv = list()
 
     # Error checking
-    if (displayor == T && object$model != "logistic")
+    if (display.OR == T && object$model != "logistic")
     {
       stop("Can only display cross-sectional odds-ratios for logistic models.")
     }
         
+    # Banner
+    cat("==========================================================================================\n")
+    cat("|              Bayesreg: Bayesian Penalised Regression Estimation ver. 1.1               |\n")
+    cat("|                        (c) Daniel F Schmidt, Enes Makalic. 2016-9                      |\n")
+    cat("==========================================================================================\n")
+
     # ===================================================================
     # Table symbols
     chline = '-'
@@ -725,7 +1224,7 @@ summary.bayesreg <- function(object, sortrank = FALSE, displayor = FALSE, ...)
     
     # ===================================================================
     # Find length of longest variable name
-    varnames = c(labels(object$muBeta)[[1]], "_cons")
+    varnames = c(labels(object$mu.beta)[[1]], "_cons")
     maxlen   = 12
     nvars    = length(varnames)
     for (i in 1:nvars)
@@ -739,7 +1238,7 @@ summary.bayesreg <- function(object, sortrank = FALSE, displayor = FALSE, ...)
     # ===================================================================
     # Display pre-table stuff
     #printf('%s%s%s\n', repchar('=', maxlen+1), '=', repchar('=', 76))
-    printf('\n')
+    #printf('\n')
     
     if (object$model != 'logistic')
     {
@@ -757,7 +1256,7 @@ summary.bayesreg <- function(object, sortrank = FALSE, displayor = FALSE, ...)
     }
     else if (object$model == "t")
     {
-      distr = "Student-t"
+      distr = paste0("Student-t (DOF = ",object$t.dof,")")
     }
     else if (object$model == "logistic")
     {
@@ -778,43 +1277,55 @@ summary.bayesreg <- function(object, sortrank = FALSE, displayor = FALSE, ...)
     printf('%-64sNumber of obs   = %8d\n', str, n)
     printf('%-64sNumber of vars  = %8.0f\n', '', px);
     
-    if (model == 'linear')
+    if (model != 'logistic')
     {
       s2 = mean(object$sigma2)
-      if (object$model == 't' && object$tdof > 2)
+      if (object$model == 't' && object$t.dof > 2)
       {
-        s2 = object$tdof/(object$tdof - 2) * s2
+        s2 = object$t.dof/(object$t.dof - 2) * s2
       }
-      rsqr = 1 - (s2*(n-1)) / object$tss
-      
-      str = sprintf('MCMC Samples   = %6.0f', object$ns);
-      printf('%-64sRoot MSE        = %8.5g\n', str, sqrt(s2));
+      else if (object$model == 't' && object$t.dof <= 2)
+      {
+        s2 = NA
+      }
+
+      str = sprintf('MCMC Samples   = %6.0f', object$n.samples);
+      if (!is.na(s2))
+      {
+        printf('%-64sstd(Error)      = %8.5g\n', str, sqrt(s2));
+      }
+      else {
+        printf('%-64sstd(Error)      =        -\n', str);
+      }
+          
       str = sprintf('MCMC Burnin    = %6.0f', object$burnin);
-      printf('%-64sR-squared       = %8.4f\n', str, rsqr);    
+      printf('%-64sR-squared       = %8.4f\n', str, object$r2);    
       str = sprintf('MCMC Thinning  = %6.0f', object$thin);
-      printf('%-64sDIC             = %8.5g\n', str, object$dic);
+      printf('%-64sWAIC            = %8.5g\n', str, object$waic);
       
-      rv$rootmse = sqrt(s2)
-      rv$rsqr    = rsqr
-      rv$dic     = object$dic
-      rv$logl    = object$logl
+      rv$sd.error  = sqrt(s2)
+      rv$r2        = object$r2
+      rv$waic      = object$waic
+      rv$waic.dof  = object$waic.dof
+      rv$log.l     = object$log.l
     }
     else if (model == 'logistic')
     {
-      logl = object$logl
-      logl0 = object$logl0
-      r2 = 1 - logl / logl0
+      log.l = object$log.l
+      log.l0 = object$log.l0
+      r2 = 1 - log.l / log.l0
       
-      str = sprintf('MCMC Samples   = %6.0f', object$ns);
-      printf('%-64sLog. Likelihood = %8.5g\n', str, object$logl);
+      str = sprintf('MCMC Samples   = %6.0f', object$n.samples);
+      printf('%-64sLog. Likelihood = %8.5g\n', str, object$log.l);
       str = sprintf('MCMC Burnin    = %6.0f', object$burnin);
       printf('%-64sPseudo R2       = %8.4f\n', str, r2);    
       str = sprintf('MCMC Thinning  = %6.0f', object$thin);
-      printf('%-64sDIC             = %8.5g\n', str, object$dic);
+      printf('%-64sWAIC            = %8.5g\n', str, object$waic);
       
-      rv$logl   = logl
-      rv$p_rsqr = r2
-      rv$dic    = object$dic
+      rv$log.l     = log.l
+      rv$p.r2      = r2
+      rv$waic      = object$waic
+      rv$waic.dof  = object$waic.dof
     }
     printf('\n')
     
@@ -823,11 +1334,13 @@ summary.bayesreg <- function(object, sortrank = FALSE, displayor = FALSE, ...)
     fmtstr = sprintf('%%%ds', maxlen);
     printf('%s%s%s\n', repchar(chline, maxlen+1), cTT, repchar(chline, 76))
     tmpstr = sprintf(fmtstr, 'Parameter');
-    if (model == 'linear' || displayor == F)
+    if (model == 'linear')
     {
       printf('%s %s  %10s %10s    [95%% Cred. Interval] %10s %7s %9s\n', tmpstr, cvline, 'mean(Coef)', 'std(Coef)', 'tStat', 'Rank', 'ESS');
-    } else if (model == 'logistic' && displayor == T) {
-      printf('%s %s  %10s %10s    [95%% Cred. Interval] %10s %7s %9s\n', tmpstr, cvline, 'median(OR)', 'std(OR)', 'tStat', 'Rank', 'ESS');
+    } else if (model == 'logistic' && display.OR == F) {
+      printf('%s %s  %10s %10s    [95%% Cred. Interval] %10s %7s %9s\n', tmpstr, cvline, 'med(Coef)', 'std(OR)', 'tStat', 'Rank', 'ESS');
+    } else if (model == 'logistic' && display.OR == T) {
+      printf('%s %s  %10s %10s    [95%% Cred. Interval] %10s %7s %9s\n', tmpstr, cvline, 'med(OR)', 'std(OR)', 'tStat', 'Rank', 'ESS');
     }
     printf('%s%s%s\n', repchar(chline, maxlen+1), cTT, repchar(chline, 76));
 
@@ -836,36 +1349,36 @@ summary.bayesreg <- function(object, sortrank = FALSE, displayor = FALSE, ...)
       beta0 = object$beta0
       beta  = object$beta
       
-      object$beta0  = beta0 + object$stdX$meanX %*% object$beta
-      object$beta   = apply(t(object$beta), 1, function(x)(x * object$stdX$stdX/sqrt(n)))    
-      object$muBeta = object$muBeta * t(as.matrix(object$stdX$stdX)) / sqrt(n)
+      object$beta0   = beta0 + object$std.X$mean.X %*% object$beta
+      object$beta    = apply(t(object$beta), 1, function(x)(x * object$std.X$std.X/sqrt(n)))    
+      object$mu.beta = object$mu.beta * t(as.matrix(object$std.X$std.X)) / sqrt(n)
     }
 
     # ===================================================================
     # Return values
-    rv$muCoef   = matrix(0,px+1,1, dimnames = list(varnames))
-    rv$seCoef   = matrix(0,px+1,1, dimnames = list(varnames))
-    rv$CICoef   = matrix(0,px+1,2, dimnames = list(varnames))
+    rv$mu.coef   = matrix(0,px+1,1, dimnames = list(varnames))
+    rv$se.coef   = matrix(0,px+1,1, dimnames = list(varnames))
+    rv$CI.coef   = matrix(0,px+1,2, dimnames = list(varnames))
     
     if (model == "logistic")
     {
-      rv$medOR  = matrix(0,px+1,1, dimnames = list(varnames))
-      rv$seOR   = matrix(0,px+1,1, dimnames = list(varnames))
-      rv$CIOR   = matrix(0,px+1,2, dimnames = list(varnames))
+      rv$med.OR  = matrix(0,px+1,1, dimnames = list(varnames))
+      rv$se.OR   = matrix(0,px+1,1, dimnames = list(varnames))
+      rv$CI.OR   = matrix(0,px+1,2, dimnames = list(varnames))
     }
 
-    rv$tStat    = matrix(0,px+1,1, dimnames = list(varnames))
-    rv$nStars   = matrix(0,px+1,1, dimnames = list(varnames))
-    rv$ESS      = matrix(0,px+1,1, dimnames = list(varnames))
+    rv$t.stat    = matrix(0,px+1,1, dimnames = list(varnames))
+    rv$n.stars   = matrix(0,px+1,1, dimnames = list(varnames))
+    rv$ESS       = matrix(0,px+1,1, dimnames = list(varnames))
     rv$rank     = matrix(0,px+1,1, dimnames = list(varnames))
 
     # Variable information
-    rv$rank[1:(px+1)] = as.matrix(object$varranks)
+    rv$rank[1:(px+1)] = as.matrix(object$var.ranks)
 
     # If sorting by BFR ranks
-    if (sortrank == T)
+    if (sort.rank == T)
     {
-      O = sort(object$varranks, index.return = T)
+      O = sort(object$var.ranks, index.return = T)
       indices = O$ix
       indices[px+1] = px+1
     }    
@@ -883,10 +1396,10 @@ summary.bayesreg <- function(object, sortrank = FALSE, displayor = FALSE, ...)
       if (k <= px)
       {
         s = object$beta[k,]
-        mu = object$muBeta[k]
+        mu = object$mu.beta[k]
 
         # Calculate shrinkage proportion, if possible
-        kappa = object$tstat[k]
+        kappa = object$t.stat[k]
       }
       
       # Intercept
@@ -897,54 +1410,59 @@ summary.bayesreg <- function(object, sortrank = FALSE, displayor = FALSE, ...)
       }
       
       # Compute credible intervals/standard errors for beta's
-      std_err = sd(s)
-      qlin = quantile(s, c(0.025, 0.25, 0.75, 0.975))
-      qlog = quantile(exp(s), c(0.025, 0.25, 0.75, 0.975))
+      std_err = stats::sd(s)
+      qlin = stats::quantile(s, c(0.025, 0.25, 0.75, 0.975))
+      qlog = stats::quantile(exp(s), c(0.025, 0.25, 0.75, 0.975))
       q = qlin
 
-      rv$muCoef[k] = mu
-      rv$seCoef[k] = std_err
-      rv$CICoef[k,] = c(qlin[1],qlin[4])
+      rv$mu.coef[k]  = mu
+      rv$se.coef[k]  = std_err
+      rv$CI.coef[k,] = c(qlin[1],qlin[4])
 
       # Compute credible intervals/standard errors for OR's
       if (model == 'logistic')
       {
-        med_OR = median(exp(s))
+        med_OR = stats::median(exp(s))
         std_err_OR = (qlog[4]-qlog[1])/2/1.96
         
-        rv$medOR[k] = med_OR
-        rv$seOR[k]  = std_err_OR
-        rv$CIOR[k,] = c(qlog[1],qlog[4])
+        rv$med.OR[k] = med_OR
+        rv$se.OR[k]  = std_err_OR
+        rv$CI.OR[k,] = c(qlog[1],qlog[4])
 
         # If display ORs, use these instead
-        if (displayor)
+        if (display.OR)
         {
           mu = med_OR
           std_err = std_err_OR
           q = qlog
         }
+        # Otherwise use posterior medians of coefficients for stability
+        else
+        {
+          mu = stats::median(s)
+        }
       }
-      rv$tStat[k] = kappa
+      rv$t.stat[k] = kappa
       
       # Display results
       tmpstr = sprintf(fmtstr, varnames[k])
       if (is.na(kappa))
-        tstat = '         .'
-      else tstat = sprintf('%10.3f', kappa)
+        t.stat = '         .'
+      else t.stat = sprintf('%10.3f', kappa)
       
-      if (is.na(object$varranks[k]))
+      if (is.na(object$var.ranks[k]))
         rank = '      .'
       else
-        rank = sprintf('%7d', object$varranks[k])
+        rank = sprintf('%7d', object$var.ranks[k])
 
-      printf('%s %s %11.5f %10.5f   %10.5f %10.5f %s %s ', tmpstr, cvline, mu, std_err, q[1], q[4], tstat, rank);
+      printf('%s %s %11.5f %10.5f   %10.5f %10.5f %s %s ', tmpstr, cvline, mu, std_err, q[1], q[4], t.stat, rank);
 
       # Model selection scores
       # Test if 75% CI includes 0
       if ( k <= px && ( (qlin[2] > 0 && qlin[3] > 0) || (qlin[2] < 0 && qlin[3] < 0) ) )    
       {
         printf('*')
-        rv$nStars[k] = rv$nStars[k] + 1
+        rv$n.stars[k] = rv$n.stars[k] + 1
       }
       else 
         printf(' ')
@@ -953,7 +1471,7 @@ summary.bayesreg <- function(object, sortrank = FALSE, displayor = FALSE, ...)
       if ( k <= px && ( (qlin[1] > 0 && qlin[4] > 0) || (qlin[1] < 0 && qlin[4] < 0) ) )    
       {
         printf('*')
-        rv$nStars[k] = rv$nStars[k] + 1
+        rv$n.stars[k] = rv$n.stars[k] + 1
       }
       else
         printf(' ')
@@ -962,16 +1480,21 @@ summary.bayesreg <- function(object, sortrank = FALSE, displayor = FALSE, ...)
       if(k > px)
         printf('%7s', '.')
       else
-        printf('%7.1f', object$essfrac[k]*100)
+        printf('%7.1f', object$ess.frac[k]*100)
 
-      rv$ESS[k] = object$essfrac[k]*100
+      rv$ESS[k] = object$ess.frac[k]*100
       
       printf('\n');
     }
     
     printf('%s%s%s\n\n', repchar(chline, maxlen+1), cTT, repchar(chline, 76));
     
-    return(rv)
+    if (model == 'logistic')
+    {
+      rv$log.l0 = object$log.l0
+    }
+    
+    invisible(rv)
 }
 
 
@@ -987,22 +1510,22 @@ bayesreg.standardise <- function(X)
   r$X     = X
   if (p > 1)
   {
-    r$meanX = colMeans(X)
+    r$mean.X = colMeans(X)
   } else
   {
-    r$meanX = mean(X)
+    r$mean.X = mean(X)
   }
-  r$stdX  = t(apply(X,2,sd)) * sqrt(n-1)
+  r$std.X  = t(apply(X,2,stats::sd)) * sqrt(n-1)
   
   # Perform the standardisation
   if (p == 1)
   {
-    r$X <- as.matrix(apply(X,1,function(x)(x - r$meanX)))
-    r$X <- as.matrix(apply(r$X,1,function(x)(x / r$stdX)))
+    r$X <- as.matrix(apply(X,1,function(x)(x - r$mean.X)))
+    r$X <- as.matrix(apply(r$X,1,function(x)(x / r$std.X)))
   } else
   {
-    r$X <- t(as.matrix(apply(X,1,function(x)(x - r$meanX))))
-    r$X <- t(as.matrix(apply(r$X,1,function(x)(x / r$stdX))))
+    r$X <- t(as.matrix(apply(X,1,function(x)(x - r$mean.X))))
+    r$X <- t(as.matrix(apply(r$X,1,function(x)(x / r$std.X))))
   }
   
   return(r)
@@ -1011,7 +1534,7 @@ bayesreg.standardise <- function(X)
 
 # ============================================================================================================================
 # Sample the regression coefficients
-bayesreg.sample_beta <- function(X, z, mvnrue, b0, sigma2, tau2, lambda2, omega2, XtX)
+bayesreg.sample_beta <- function(X, z, mvnrue, b0, sigma2, tau2, lambda2, omega2, XtX, Xty, model, PrecomputedXtX)
 {
   alpha  = (z - b0)
   Lambda = sigma2 * tau2 * lambda2
@@ -1021,25 +1544,58 @@ bayesreg.sample_beta <- function(X, z, mvnrue, b0, sigma2, tau2, lambda2, omega2
   if (mvnrue)
   {
     # If XtX is not precomputed
-    if (any(is.na(XtX)))
+    if (!PrecomputedXtX)
     {
-      omega = sqrt(omega2)
-      X0    = apply(X,2,function(x)(x/omega))
-      bs    = bayesreg.fastmvg2_rue(X0/sigma, alpha/sigma/omega, Lambda)
+      #omega = sqrt(omega2)
+      #X0    = apply(X,2,function(x)(x/omega))
+      #bs    = bayesreg.fastmvg2_rue(X0/sigma, alpha/sigma/omega, Lambda)
+
+      omega = sqrt(omega2)*sigma
+      X0 = X
+      # Loop is faster than apply() -- why??
+      for (i in 1:length(lambda2))
+      {
+        X0[,i] = X[,i]/omega
+      }
+
+      bs    = bayesreg.fastmvg2_rue.nongaussian(X0, alpha, Lambda, sigma2, omega)
     }
     
     # XtX is precomputed (Gaussian only)
     else {
-      bs    = bayesreg.fastmvg2_rue(X/sigma, alpha/sigma, Lambda, XtX/sigma2)
+      #bs    = bayesreg.fastmvg2_rue(X/sigma, alpha/sigma, Lambda, XtX/sigma2)
+      bs    = bayesreg.fastmvg2_rue.gaussian(X, alpha, Lambda, XtX, Xty, sigma2, PrecomputedXtX=T)
+      #bs    = bayesreg.fastmvg2_rue.gaussian.2(X, alpha, Lambda, XtX, sigma2, PrecomputedXtX=T)
     }
   }
   
   # Else use Bhat. algorithm
   else
   {
-    omega = sqrt(omega2)
-    X0    = apply(X,2,function(x)(x/omega))
-    bs    = bayesreg.fastmvg_bhat(X0/sigma, alpha/sigma/omega, Lambda)
+    omega = sqrt(omega2)*sigma
+    
+    # Non-Gaussian (heteroskedastic Gaussian ...)
+    if (model != 'gaussian')
+    {
+      #omega = sqrt(omega2)
+      #X0    = apply(X,2,function(x)(x/omega))
+      #bs    = bayesreg.fastmvg_bhat(X0/sigma, alpha/sigma/omega, Lambda)
+      
+      # Loop is faster than apply ...
+      X0    = X
+      for (i in 1:length(lambda2))
+      {
+        X0[,i] = X[,i]/omega
+      }
+    }
+    # Gaussian 
+    else
+    {
+      X0 = X/sigma
+    }
+    
+    # Generate a sample
+    bs    = bayesreg.fastmvg_bhat(X0, alpha/omega, Lambda)
   }
   
   return(bs)
@@ -1047,32 +1603,22 @@ bayesreg.sample_beta <- function(X, z, mvnrue, b0, sigma2, tau2, lambda2, omega2
 
 
 # ============================================================================================================================
-# function to generate multivariate normal random variates using Rue's algorithm
-bayesreg.fastmvg2_rue <- function(Phi, alpha, d, PtP = NA)
+# function to generate multivariate normal random variates using Rue's algorithm for non-Gaussian noise
+bayesreg.fastmvg2_rue.nongaussian <- function(Phi, alpha, d, sigma2, omega)
 {
   Phi   = as.matrix(Phi)
   alpha = as.matrix(alpha)
   r     = list()
-  
-  # If PtP not precomputed
-  if (any(is.na(PtP)))
-  {
-    PtP = t(Phi) %*% Phi
-  }
-  
+
   p     = ncol(Phi)
-  if (length(d) > 1)
-  {
-    Dinv  = diag(as.vector(1/d))
-  }
-  else
-  {
-    Dinv   = 1/d
-  }
-  L     = t(chol(PtP + Dinv))
-  v     = forwardsolve(L, t(Phi) %*% alpha)
-  r$m   = backsolve(t(L), v)
-  w     = backsolve(t(L), rnorm(p,0,1))
+  Dinv  = diag(as.vector(1/d), nrow = length(d))
+
+  PtP   = t(Phi)%*%Phi
+  
+  L     = chol(PtP + Dinv)
+  v     = forwardsolve(t(L), (crossprod(Phi,alpha/omega)))
+  r$m   = backsolve(L, v)
+  w     = backsolve(L, stats::rnorm(p,0,1))
   
   r$x   = r$m + w
   return(r)
@@ -1080,27 +1626,74 @@ bayesreg.fastmvg2_rue <- function(Phi, alpha, d, PtP = NA)
 
 
 # ============================================================================================================================
+# function to generate multivariate normal random variates using Rue's algorithm for Gaussian noise
+bayesreg.fastmvg2_rue.gaussian <- function(Phi, alpha, d, PtP = NA, Ptalpha = NA, sigma2, PrecomputedXtX=F)
+{
+  Phi   = as.matrix(Phi)
+  alpha = as.matrix(alpha)
+  r     = list()
+  
+  # If PtP not precomputed
+  if (!PrecomputedXtX)
+  {
+    PtP = t(Phi) %*% Phi
+  }
+
+  p     = ncol(Phi)
+  Dinv  = diag(as.vector(1/d), nrow = length(d))
+
+  L     = chol(PtP/sigma2 + Dinv)
+  
+  v     = forwardsolve(t(L), (Ptalpha/sigma2))
+  r$m   = backsolve(L, v)
+  w     = backsolve(L, stats::rnorm(p,0,1))
+  
+  r$x   = r$m + w
+  return(r)
+}
+
+# ============================================================================================================================
 # function to generate multivariate normal random variates using Bhat. algorithm
 bayesreg.fastmvg_bhat <- function(Phi, alpha, d)
 {
-  d     = as.matrix(d)
+  #d     = as.matrix(d)
   p     = ncol(Phi)
   n     = nrow(Phi)
   r     = list()
   
-  u     = as.matrix(rnorm(p,0,1)) * sqrt(d)
-  delta = as.matrix(rnorm(n,0,1))
-  v     = Phi %*% u + delta
-  Dpt   = (apply(Phi, 1, function(x)(x*d)))
-  W     = Phi %*% Dpt + diag(1,n)
-  w     = solve(W,(alpha-v))
+  u     = as.matrix(stats::rnorm(p,0,1)) * sqrt(d)
+  delta = as.matrix(stats::rnorm(n,0,1))
   
+  v     = Phi %*% u + delta
+  #Dpt   = (apply(Phi, 1, function(x)(x*d)))
+  #
+  #Dpt = Phi
+  #for (i in 1:length(alpha))
+  #{
+  #  Dpt[i,] = Dpt[i,]*d
+  #}
+  #Dpt = t(Dpt)
+    
+  Dpt   = Phi
+  for (i in 1:length(d))
+  {
+    Dpt[,i] = Dpt[,i]*d[i]
+  }
+  Dpt = t(Dpt)
+  
+  W     = Phi %*% Dpt + diag(1,n)
+
+  #w     = solve(W,(alpha-v))
+
+  L     = chol(W)
+  vv    = forwardsolve(t(L), (alpha-v))
+  w     = backsolve(L, vv)
+
   r$x   = u + Dpt %*% w
   r$m   = r$x
-
+  
   return(r)
 }
-
 
 # ============================================================================================================================
 # rinvg
@@ -1109,10 +1702,10 @@ bayesreg.rinvg <- function(mu, lambda)
   lambda = 1/lambda
   p = length(mu)
   
-  V = rnorm(p,mean=0,sd=1)^2
+  V = stats::rnorm(p,mean=0,sd=1)^2
   out = mu + 1/2*mu/lambda * (mu*V - sqrt(4*mu*lambda*V + mu^2*V^2))
   out[out<1e-16] = 1e-16
-  z = runif(p)
+  z = stats::runif(p)
   
   l = z >= mu/(mu+out)
   out[l] = mu[l]^2 / out[l]
@@ -1120,44 +1713,9 @@ bayesreg.rinvg <- function(mu, lambda)
   return(out)
 }
 
-
-# ============================================================================================================================
-# compute the DIC score for the model
-bayesreg.computedic <- function(error, X, y, beta, beta0, tdof, rv)
-{
-  nsamples = ncol(beta)
-  
-  dic = 0
-  negll = 0
-  for (i in 1:nsamples)
-  {
-    if (error != 'logistic')
-    {
-      negll = bayesreg.linregnlike(error, as.matrix(X), as.matrix(y), beta[,i], beta0[i], rv$sigma2[i], tdof)
-    }
-    else
-    {
-      negll = bayesreg.logregnlike(as.matrix(X), as.matrix(y), beta[,i], beta0[i])
-    }
-    dic = dic + negll
-  }
-  dic = dic / nsamples
-  
-  if (error != 'logistic')
-  {
-    dic = -2*dic + bayesreg.linregnlike(error, as.matrix(X), as.matrix(y), rv$muBeta, rv$muBeta0, rv$muSigma2, tdof)
-  }
-  else
-  {
-    dic = -2*dic + bayesreg.logregnlike(as.matrix(X), as.matrix(y), rv$muBeta, rv$muBeta0)
-  }
-  
-  return(dic)
-}
-
 # ============================================================================================================================
 # compute the negative log-likelihood
-bayesreg.linregnlike <- function(error, X, y, b, b0, s2, tdof = NA)
+bayesreg.linregnlike <- function(error, X, y, b, b0, s2, t.dof = NA)
 {
   n = nrow(y)
 
@@ -1179,7 +1737,7 @@ bayesreg.linregnlike <- function(error, X, y, b, b0, s2, tdof = NA)
   }
   else if (error == 't')
   {
-    nu = tdof;
+    nu = t.dof;
     negll = n*(-lgamma((nu+1)/2) + lgamma(nu/2) + log(pi*nu*s2)/2) + (nu+1)/2*sum(log(1 + 1/nu*e^2/as.numeric(s2)))
   }
   
@@ -1213,4 +1771,60 @@ bayesreg.logregnlike <- function(X, y, b, b0)
     sum((1.0 - y)*log(1.0 - mu))
   
   return(negll)
+}
+
+# ============================================================================================================================
+# compute the negative log-likelihood for individual predictions for logistic/linear regression using precomputed predictor
+bayesreg.linregnlike_e <- function(error, e, s2, t.dof = NA)
+{
+  n = nrow(e)
+
+  if (error == 'gaussian')
+  {
+    negll = 1/2*log(2*pi*s2) + 1/2/s2*e^2
+  }
+  else if (error == 'laplace')
+  {
+    scale <- sqrt(as.numeric(s2)/2)
+    negll = 1*log(2*scale) + abs(e)/scale
+  }
+  else if (error == 't')
+  {
+    nu = t.dof;
+    negll = 1*(-lgamma((nu+1)/2) + lgamma(nu/2) + log(pi*nu*s2)/2) + (nu+1)/2*(log(1 + 1/nu*e^2/as.numeric(s2)))
+  }
+
+  rv = list(negll = negll, prob = exp(-negll))
+  
+  return(rv)
+}
+
+# ============================================================================================================================
+# compute the negative log-likelihood for logistic regression
+bayesreg.logregnlike_eta <- function(y, eta)
+{
+  y = as.matrix(y)
+  b = as.matrix(eta)
+
+  eps = exp(-36)
+  lowerBnd = log(eps)
+  upperBnd = -lowerBnd
+  muLims = c(eps, 1-eps)
+  
+  # Constrain the linear predictor
+  eta[eta < lowerBnd] = lowerBnd
+  eta[eta > upperBnd] = upperBnd
+  
+  mu = 1 / (1 + exp(-eta))
+  
+  # Constrain probabilities 
+  mu[mu < eps] = eps
+  mu[mu > (1-eps)] = (1-eps)
+  
+  # Return quantities
+  negll = -y*log(mu) - (1.0-y)*log(1.0-mu)
+  
+  rv = list(negll = negll, prob = exp(-negll))
+
+  return(rv)
 }

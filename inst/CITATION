@@ -1,0 +1,16 @@
+bibentry(bibtype = "Unpublished",
+         title        = "High-Dimensional Bayesian Regularised Regression with the Bayesreg Package",
+         author       = c(person(given = "Enes",
+                                 family = "Makalic",
+                                 email = "emakalic@unimelb.edu.au"),
+                          person(given = "Daniel",
+                                 family = "Schmidt",
+                                 email = "daniel.schmidt@monash.edu")),
+         note         = "arXiv:1611.06649",
+
+         header       = "To cite Bayesreg in publications use:",
+         textVersion  =
+           paste("Enes Makalic and Daniel Schmidt (2016).",
+                 "High-Dimensional Bayesian Regularised Regression with the BayesReg Package",
+                 "arXiv:1611.06649")
+)
