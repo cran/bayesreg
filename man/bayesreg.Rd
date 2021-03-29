@@ -4,8 +4,16 @@
 \alias{bayesreg}
 \title{Fitting Bayesian Regression Models with Continuous Shrinkage Priors}
 \usage{
-bayesreg(formula, data, model = "normal", prior = "ridge",
-  n.samples = 1000, burnin = 1000, thin = 5, t.dof = 5)
+bayesreg(
+  formula,
+  data,
+  model = "normal",
+  prior = "ridge",
+  n.samples = 1000,
+  burnin = 1000,
+  thin = 5,
+  t.dof = 5
+)
 }
 \arguments{
 \item{formula}{An object of class "\code{\link{formula}}": a symbolic description of the model to be fitted using the standard R formula notation.}
@@ -14,9 +22,10 @@ bayesreg(formula, data, model = "normal", prior = "ridge",
 
 \item{model}{The distribution of the target (y) variable. Continuous or numeric variables can be distributed as per a Gaussian distribution (\code{model="gaussian"} 
 or \code{model="normal"}), Laplace distribution (\code{model = "laplace"} or \code{model = "l1"}) or Student-t distribution (\code{"model" = "studentt"} or \code{"model" = "t"}). 
+Integer or count data can be distributed as per a Poisson distribution (\code{model="poisson"}) or geometric distribution (\code{model="geometric"}).
 For binary targets (factors with two levels) either \code{model="logistic"} or \code{"model"="binomial"} should be used.}
 
-\item{prior}{The continuous shrinkage prior distribution over the regression coefficients that is to be used. Options include ridge regression 
+\item{prior}{Which continuous shrinkage prior distribution over the regression coefficients to use. Options include ridge regression 
 (\code{prior="rr"} or \code{prior="ridge"}), lasso regression (\code{prior="lasso"}), horseshoe regression (\code{prior="hs"} or \code{prior="horseshoe"}) and 
 horseshoe+ regression (\code{prior="hs+"} or \code{prior="horseshoe+"})}
 
@@ -54,22 +63,24 @@ The returned object also stores the parameters/options used to run \code{bayesre
 }
 \description{
 Fit a linear or logistic regression model using Bayesian continuous shrinkage prior distributions. Handles ridge, lasso, horseshoe and horseshoe+ regression with logistic,
-Gaussian, Laplace or Student-t distributed targets. See \code{\link{bayesreg-package}} for more details on the features available in this package.
+Gaussian, Laplace, Student-t, Poisson or geometric distributed targets. See \code{\link{bayesreg-package}} for more details on the features available in this package.
 }
 \note{
 To cite this toolbox please reference: 
   
-  Makalic, E. & Schmidt, D. F.
+Makalic, E. & Schmidt, D. F.
 High-Dimensional Bayesian Regularised Regression with the BayesReg Package
 arXiv:1611.06649 [stat.CO], 2016 \url{https://arxiv.org/pdf/1611.06649.pdf}
 
 A MATLAB implementation of the bayesreg function is also available from:
 
-\url{https://au.mathworks.com/matlabcentral/fileexchange/60823-bayesian-penalized-regression-with-continuous-shrinkage-prior-densities}
+\url{https://au.mathworks.com/matlabcentral/fileexchange/60823-flexible-bayesian-penalized-regression-modelling}
+
+Copyright (C) Daniel F. Schmidt and Enes Makalic, 2016-2021
 }
 \section{Details}{
 
-Draws a series of samples from the posterior distribution of a linear (Gaussian, Laplace or Student-t) or logistic regression model with specified continuous 
+Draws a series of samples from the posterior distribution of a linear (Gaussian, Laplace or Student-t) or generalized linear (logistic binary, Poisson, geometric) regression model with specified continuous 
 shrinkage prior distribution (ridge regression, lasso, horseshoe and horseshoe+) using Gibbs sampling. The intercept parameter is always included, and is never penalised.
 
 While only \code{n.samples} are returned, the total number of samples generated is equal to \code{burnin}+\code{n.samples}*\code{thin}. To generate the samples 
@@ -130,8 +141,32 @@ legend(1,11,c("Gaussian","Student-t (dof=5)"),lty=c(1,1),col=c("blue","darkred")
        lwd=c(2.5,2.5), cex=0.7)
 
 \dontrun{
-  # -----------------------------------------------------------------
-# Example 3: Logistic regression on spambase
+# -----------------------------------------------------------------
+# Example 3: Poisson/geometric regression example
+
+X  = matrix(rnorm(100*20),100,5)
+b  = c(0.5,-1,0,0,1)
+nu = X\%*\%b + 1
+y  = rpois(lambda=exp(nu),n=length(nu))
+
+df <- data.frame(X,y)
+
+# Fit a Poisson regression
+rv.pois=bayesreg(y~.,data=df,model="poisson",prior="hs", burnin=1e4, n.samples=1e4)
+summary(rv.pois)
+
+# Fit a geometric regression
+rv.geo=bayesreg(y~.,data=df,model="geometric",prior="hs", burnin=1e4, n.samples=1e4)
+summary(rv.geo)
+
+# Compare the two models in terms of their WAIC scores
+cat(sprintf("Poisson regression WAIC=\%g vs geometric regression WAIC=\%g", 
+            rv.pois$waic, rv.geo$waic))
+# Poisson is clearly preferred to geometric, which is good as data is generated from a Poisson!
+ 
+ 
+# -----------------------------------------------------------------
+# Example 4: Logistic regression on spambase
 data(spambase)
   
 # bayesreg expects binary targets to be factors
@@ -155,12 +190,13 @@ table(y_pred, spambase.tst$is.spam)
   
 # Calculate logarithmic loss on test data
 y_prob <- predict(rv, spambase.tst, type='prob')
-cat('Neg Log-Like for no Bayes average, posterior mean estimates: ', sum(-log(y_prob[,1])), '\\n')
+cat('Neg Log-Like for no Bayes average, posterior mean estimates: ', sum(-log(y_prob[,1])), '\n')
 y_prob <- predict(rv, spambase.tst, type='prob', sum.stat="median")
-cat('Neg Log-Like for no Bayes average, posterior median estimates: ', sum(-log(y_prob[,1])), '\\n')
+cat('Neg Log-Like for no Bayes average, posterior median estimates: ', sum(-log(y_prob[,1])), '\n')
 y_prob <- predict(rv, spambase.tst, type='prob', bayes.avg=TRUE)
-cat('Neg Log-Like for Bayes average: ', sum(-log(y_prob[,1])), '\\n')
+cat('Neg Log-Like for Bayes average: ', sum(-log(y_prob[,1])), '\n')
 }
+
 }
 \references{
 Makalic, E. & Schmidt, D. F.
@@ -194,6 +230,13 @@ Journal of the Royal Statistical Society (Series B), Vol. 63, 325-338, 2001
 Bhattacharya, A.; Chakraborty, A. & Mallick, B. K. 
 Fast sampling with Gaussian scale-mixture priors in high-dimensional regression 
 arXiv:1506.04778, 2016
+
+Schmidt, D.F. & Makalic, E.
+Bayesian Generalized Horseshoe Estimation of Generalized Linear Models
+ECML PKDD 2019: Machine Learning and Knowledge Discovery in Databases. pp 598-613, 2019
+
+Stan Development Team, Stan Reference Manual (Version 2.26), Section 15.4, "Effective Sample Size",
+\url{https://mc-stan.org/docs/2_18/reference-manual/effective-sample-size-section.html}
 }
 \seealso{
 The prediction function \code{\link{predict.bayesreg}} and summary function \code{\link{summary.bayesreg}}

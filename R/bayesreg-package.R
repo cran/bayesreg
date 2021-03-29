@@ -1,16 +1,18 @@
 #' This is a comprehensive, user-friendly package implementing the state-of-the-art in 
-#' Bayesian linear regression and Bayesian logistic regression. Features of the toolbox include:
+#' Bayesian linear regression, Bayesian count regression and Bayesian logistic regression. Features of the toolbox include:
 #' \itemize{
-#'  \item Supports Gaussian, Laplace, Student-t and logistic binary data models.
+#'  \item Supports Gaussian, Laplace, Student-t, Poisson, geometric and logistic binary data models.
 #'  \item Efficient and numerically stable implementations of Bayesian ridge, Bayesian lasso, horseshoe and horseshoe+ regression.
 #'  \item Provides variable ranking and importance, credible intervals and diagnostics such as the widely applicable information criterion.
 #'  \item Factor variables are automatically grouped together and additional shrinkage is applied to the set of indicator variables to which they expand.
 #'  \item Prediction tools for generating credible intervals and Bayesian averaging of predictions.
 #' }
 #' The lasso, horseshoe and horseshoe+ priors are recommended for data sets where the number of 
-#' predictors is greater than the sample size. The non-Gaussian models are based on scale-mixture representations.
-#' Logistic regression utilises the Polya-gamma sampler implemented in the \code{pgdraw} package.
+#' predictors is greater than the sample size. The Laplace, Student-t and logistic models are based on scale-mixture representations;
+#' logistic regression utilises the Polya-gamma sampler implemented in the \code{pgdraw} package. The Poisson and
+#' geometric distributions are implemented using a fast gradient-assisted Metropolis-Hastings algorithm.
 #'
+#' Count (non-negative integer) regression is now supported through implementation of Poisson and geometric regression models.
 #' To support analysis of data with outliers, we provide two heavy-tailed error models in our 
 #' implementation of Bayesian linear regression: Laplace and Student-t distribution errors. 
 #' The widely applicable information criterion (WAIC) is routinely calculated and displayed
@@ -20,11 +22,17 @@
 #' Further information on the particular algorithms/methods implemented in this package provided
 #' by the literature referenced below.
 #' 
+#' Version history:
+#' \itemize{
+#' \item Version 1.1: Initial release
+#' \item Version 1.2: Added Poisson and geometric regression; user specifiable credible interval levels for \code{summary()} and \code{predict()}; \code{summary()} column "ESS" now reports effective sample size rather than percentage-effective sample size
+#' }
+#' 
 #' @title Getting started with the bayesreg package
 #' @docType package
 #' @author Daniel Schmidt \email{daniel.schmidt@@monash.edu} 
 #' 
-#' Faculty of Information Technology, Monash University, Australia
+#' Department of Data Science and AI, Monash University, Australia
 #'
 #' Enes Makalic \email{emakalic@@unimelb.edu.au}
 #' 
@@ -38,7 +46,7 @@
 #' 
 #' A MATLAB-compatible implementation of this package can be obtained from:
 #' 
-#' \url{https://au.mathworks.com/matlabcentral/fileexchange/60823}
+#' \url{https://au.mathworks.com/matlabcentral/fileexchange/60823-flexible-bayesian-penalized-regression-modelling}
 #'
 #' @seealso \code{\link{bayesreg}}
 #' @name bayesreg-package
@@ -76,7 +84,15 @@
 #'    Bayesian Grouped Horseshoe Regression with Application to Additive Models
 #'    AI 2016: Advances in Artificial Intelligence, pp. 229-240, 2016
 #' 
+#'    Schmidt, D.F. & Makalic, E.
+#'    Bayesian Generalized Horseshoe Estimation of Generalized Linear Models
+#'    ECML PKDD 2019: Machine Learning and Knowledge Discovery in Databases. pp 598-613, 2019
+#'    
+#'    Stan Development Team, Stan Reference Manual (Version 2.26), Section 15.4, "Effective Sample Size",
+#'    \url{https://mc-stan.org/docs/2_18/reference-manual/effective-sample-size-section.html}
+#'
 #' @examples 
+#' \dontrun{
 #' # -----------------------------------------------------------------
 #' # Example 1: Gaussian regression
 #' X = matrix(rnorm(100*20),100,20)
@@ -127,9 +143,33 @@
 #' legend(1,11,c("Gaussian","Student-t (dof=5)"),lty=c(1,1),col=c("blue","darkred"),
 #'        lwd=c(2.5,2.5), cex=0.7)
 #' 
-#' \dontrun{
+#' 
 #' # -----------------------------------------------------------------
-#' # Example 3: Logistic regression on spambase
+#' # Example 3: Poisson/geometric regression example
+#' 
+#' X  = matrix(rnorm(100*20),100,5)
+#' b  = c(0.5,-1,0,0,1)
+#' nu = X%*%b + 1
+#' y  = rpois(lambda=exp(nu),n=length(nu))
+#'
+#' df <- data.frame(X,y)
+#'
+#' # Fit a Poisson regression
+#' rv.pois=bayesreg(y~.,data=df,model="poisson",prior="hs", burnin=1e4, n.samples=1e4)
+#' summary(rv.pois)
+#' 
+#' # Fit a geometric regression
+#' rv.geo=bayesreg(y~.,data=df,model="geometric",prior="hs", burnin=1e4, n.samples=1e4)
+#' summary(rv.geo)
+#' 
+#' # Compare the two models in terms of their WAIC scores
+#' cat(sprintf("Poisson regression WAIC=%g vs geometric regression WAIC=%g", 
+#'             rv.pois$waic, rv.geo$waic))
+#' # Poisson is clearly preferred to geometric, which is good as data is generated from a Poisson!
+#'  
+#'  
+#' # -----------------------------------------------------------------
+#' # Example 4: Logistic regression on spambase
 #' data(spambase)
 #'   
 #' # bayesreg expects binary targets to be factors
@@ -159,4 +199,6 @@
 #' y_prob <- predict(rv, spambase.tst, type='prob', bayes.avg=TRUE)
 #' cat('Neg Log-Like for Bayes average: ', sum(-log(y_prob[,1])), '\n')
 #' }
+#' 
+#' @import stats
 NULL

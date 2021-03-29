@@ -4,21 +4,31 @@
 \alias{predict.bayesreg}
 \title{Prediction method for Bayesian penalised regression (\code{bayesreg}) models}
 \usage{
-\method{predict}{bayesreg}(object, newdata, type = "linpred",
-  bayes.avg = FALSE, sum.stat = "mean", ...)
+\method{predict}{bayesreg}(
+  object,
+  newdata,
+  type = "linpred",
+  bayes.avg = FALSE,
+  sum.stat = "mean",
+  CI = 95,
+  ...
+)
 }
 \arguments{
 \item{object}{an object of class \code{"bayesreg"} created as a result of a call to \code{\link{bayesreg}}.}
 
 \item{newdata}{A data frame providing the variables from which to produce predictions.}
 
-\item{type}{The type of predictions to produce; if \code{type="linpred"} it will return the linear predictor for both binary 
-and continuous data. For binary data, if \code{type="prob"} it will return predictive probability estimates, and if \code{type="class"} 
-and the data is binary, it will return the best guess at the class of the target variable.}
+\item{type}{The type of predictions to produce; if \code{type="linpred"} it will return the linear predictor for binary, 
+count and continuous data. If \code{type="prob"} it will return predictive probability estimates for provided 'y' data (see below for more details).
+If \code{type="response"} it will return the predicted conditional mean of the target (see below for more details).
+If \code{type="class"} and the data is binary, it will return the best guess at the class of the target variable.}
 
 \item{bayes.avg}{logical; whether to produce predictions using Bayesian averaging.}
 
 \item{sum.stat}{The type of summary statistic to use; either \code{sum.stat="mean"} or \code{sum.stat="median"}.}
+
+\item{CI}{The size (level, as a percentage) of the credible interval to report (default: 95, i.e. a 95\% credible interval)}
 
 \item{...}{Further arguments passed to or from other methods.}
 }
@@ -27,7 +37,7 @@ and the data is binary, it will return the best guess at the class of the target
 \code{FALSE} a matrix with a single column \code{pred} is returned, containing the predictions.
 
 If \code{bayes.avg} is \code{TRUE}, three additional columns are returned: \code{se(pred)}, which contains 
-standard errors for the predictions, and \code{CI 2.5\%} and \code{CI 97.5\%} which contain 95\% credible intervals for the predictions.
+standard errors for the predictions, and two columns containing the credible intervals (at the specified level) for the predictions.
 }
 \description{
 Predict values based on Bayesian penalised regression (\code{\link{bayesreg}}) models.
@@ -35,17 +45,22 @@ Predict values based on Bayesian penalised regression (\code{\link{bayesreg}}) m
 \section{Details}{
 
 \code{predict.bayesreg} produces predicted values using variables from the specified data frame. The type of predictions produced 
-depend on the value of the parameter \code{type}.
+depend on the value of the parameter \code{type}:
 
-If \code{type="linpred"}, the predictions that are returned will be the value of the linear predictor formed from the model 
+\itemize{
+\item If \code{type="linpred"}, the predictions that are returned will be the value of the linear predictor formed from the model 
 coefficients and the provided data. 
 
-If \code{type="prob"}, the predictions will be probabilities. If the specified data frame includes a column with the same name as the 
-target variable on which the model was created, the predictions will then be the probability density values for these target values. 
-For binary data, if the specified data frame does not include a column with the same name as the target variable, the predictions will 
-be the probability of the target being equal to the second level of the factor variable. 
+\item If \code{type="response"}, the predictions will be the conditional mean for each data point. For Gaussian, Laplace and Student-t targets
+the conditional mean is simply equal to the linear predictor; for binary data, the predictions will 
+be the probability of the target being equal to the second level of the factor variable; for count data, the conditional mean
+will be exp(linear predictor).
 
-If \code{type="class"} and the target variable is binary, the predictions will be the most likely class.
+\item If \code{type="prob"}, the predictions will be probabilities. The specified data frame must include a column with the same name as the 
+target variable on which the model was created. The predictions will then be the probability (density) values for these target values. 
+
+\item If \code{type="class"} and the target variable is binary, the predictions will be the most likely class.
+}
 
 If \code{bayes.avg} is \code{FALSE} the predictions will be produced by using a summary of the posterior samples of the coefficients 
 and scale parameters as estimates for the model. If \code{bayes.avg} is \code{TRUE}, the predictions will be produced by posterior 
@@ -91,7 +106,7 @@ y = c(-0.6867, 1.7258, 1.9117, 6.1832, 5.3636, 7.1139, 9.5668, 10.0593, 11.4044,
 df = data.frame(X,y)
 
 # Gaussian ridge
-rv.G <- bayesreg(y~., df, model = "gaussian", prior = "ridge", n.samples = 1.5e3)
+rv.G <- bayesreg(y~., df, model = "gaussian", prior = "ridge", n.samples = 1e3)
 
 # Produce predictive density for X=2
 df.tst = data.frame(y=seq(-7,12,0.01),X=2)
@@ -110,9 +125,40 @@ legend(-7,0.14,c("Mean (no averaging)","Median (no averaging)","Bayes Average"),
 
 title('Predictive densities for X=2')
 
+
 \dontrun{
 # -----------------------------------------------------------------
-# Example 3: Logistic regression on spambase
+# Example 3: Poisson (count) regression
+
+X  = matrix(rnorm(100*20),100,5)
+b  = c(0.5,-1,0,0,1)
+nu = X\%*\%b + 1
+y  = rpois(lambda=exp(nu),n=length(nu))
+
+df <- data.frame(X,y)
+
+# Fit a Poisson regression
+rv.pois = bayesreg(y~.,data=df, model="poisson", prior="hs", burnin=1e4, n.samples=1e4)
+ 
+# Make a prediction for the first five rows
+# By default this predicts the log-rate (i.e., the linear predictor)
+predict(rv.pois,df[1:5,]) 
+
+# This is the response (i.e., conditional mean of y)
+exp(predict(rv.pois,df[1:5,])) 
+
+# Same as above ... compare to the actual targets
+cbind(exp(predict(rv.pois,df[1:5,])), y[1:5])
+
+# Slightly different as E[exp(x)]!=exp(E[x])
+predict(rv.pois,df[1:5,], type="response", bayes.avg=TRUE) 
+
+# 99\% credible interval for response
+predict(rv.pois,df[1:5,], type="response", bayes.avg=TRUE, CI=99) 
+
+
+# -----------------------------------------------------------------
+# Example 4: Logistic regression on spambase
 data(spambase)
  
 # bayesreg expects binary targets to be factors
@@ -137,11 +183,11 @@ table(y_pred, spambase.tst$is.spam)
 
 # Calculate logarithmic loss on test data
 y_prob <- predict(rv, spambase.tst, type='prob')
-cat('Neg Log-Like for no Bayes average, posterior mean estimates: ', sum(-log(y_prob[,1])), '\\n')
+cat('Neg Log-Like for no Bayes average, posterior mean estimates: ', sum(-log(y_prob[,1])), '\n')
 y_prob <- predict(rv, spambase.tst, type='prob', sum.stat="median")
-cat('Neg Log-Like for no Bayes average, posterior median estimates: ', sum(-log(y_prob[,1])), '\\n')
+cat('Neg Log-Like for no Bayes average, posterior median estimates: ', sum(-log(y_prob[,1])), '\n')
 y_prob <- predict(rv, spambase.tst, type='prob', bayes.avg=TRUE)
-cat('Neg Log-Like for Bayes average: ', sum(-log(y_prob[,1])), '\\n')
+cat('Neg Log-Like for Bayes average: ', sum(-log(y_prob[,1])), '\n')
 }
 }
 \seealso{

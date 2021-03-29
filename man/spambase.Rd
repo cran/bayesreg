@@ -4,7 +4,8 @@
 \name{spambase}
 \alias{spambase}
 \title{Spambase}
-\format{A data frame with 4,601 rows and 58 variables (1 categorical, 57 continuous). 
+\format{
+A data frame with 4,601 rows and 58 variables (1 categorical, 57 continuous). 
 \describe{
   \item{\code{is.spam}}{Is the email considered to be spam? (0=no,1=yes)}
   \item{\code{word.freq.make}}{Percentage of times the word 'make' appeared in the e-mail}
@@ -64,7 +65,8 @@
   \item{\code{capital.run.length.average}}{Average length of contiguous runs of capital letters in the e-mail}
   \item{\code{capital.run.length.longest}}{Maximum length of contiguous runs of capital letters in the e-mail}
   \item{\code{capital.run.length.total}}{Total number of capital letters in the e-mail}
-}}
+}
+}
 \source{
 \url{https://archive.ics.uci.edu/ml/datasets/spambase/}
 }

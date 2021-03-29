@@ -4,8 +4,7 @@
 \alias{summary.bayesreg}
 \title{Summarization method for Bayesian penalised regression (\code{bayesreg}) models}
 \usage{
-\method{summary}{bayesreg}(object, sort.rank = FALSE,
-  display.OR = FALSE, ...)
+\method{summary}{bayesreg}(object, sort.rank = FALSE, display.OR = FALSE, CI = 95, ...)
 }
 \arguments{
 \item{object}{An object of class \code{"bayesreg"} created as a result of a call to \code{\link{bayesreg}}.}
@@ -15,6 +14,8 @@ the Bayesian feature ranking algorithm.}
 
 \item{display.OR}{logical; if \code{TRUE}, the variables will be summarised in terms of their cross-sectional odds-ratios rather than their 
 regression coefficients (logistic regression only).}
+
+\item{CI}{numerical; the level of the credible interval reported in summary. Default is 95 (i.e., 95\% credible interval).}
 
 \item{...}{Further arguments passed to or from other methods.}
 }
@@ -29,10 +30,10 @@ Returns an object with the following fields:
 \item{p.r2}{For binary data, the pseudo-R^2 statistic.}
 \item{mu.coef}{The posterior means of the regression coefficients.}
 \item{se.coef}{The posterior standard deviations of the regression coefficients.}
-\item{CI.coef}{The posterior 95\% credible interval for the regression coefficients.}
+\item{CI.coef}{The posterior credible interval for the regression coefficients, at the level specified (default: 95\%).}
 \item{med.OR}{For binary data, the posterior median of the cross-sectional odds-ratios.}
 \item{se.OR}{For binary data, the posterior standard deviation of the cross-sectional odds-ratios.}
-\item{CI.OR}{For binary data, the posterior 95\% credible interval for the cross-sectional odds-ratios.}
+\item{CI.OR}{For binary data, the posterior credible interval for the cross-sectional odds-ratios.}
 \item{t.stat}{The posterior t-statistic for the coefficients.}
 \item{n.stars}{The significance level for the variable (see above).}
 \item{rank}{The variable importance rank as estimated by the Bayesian feature ranking algorithm (see above).}
@@ -49,20 +50,23 @@ with suitable header information.
 
 For continuous target variables, the header information includes a posterior estimate of the standard deviation of the random disturbances (errors), the \eqn{R^2} statistic
 and the Widely applicable information criterion (WAIC) statistic. For logistic regression models, the header information includes the negative 
-log-likelihood at the posterior mean of the regression coefficients, the pseudo \eqn{R^2} score and the WAIC statistic.
+log-likelihood at the posterior mean of the regression coefficients, the pseudo \eqn{R^2} score and the WAIC statistic. For count
+data (Poisson and geometric), the header information includes an estimate of the degree of overdispersion (observed variance divided by expected variance around the conditional mean, with a value < 1 indicating underdispersion),
+the pseudo \eqn{R^2} score and the WAIC statistic.
 
 The main table summarises properties of the coefficients for each of the variables. The first column is the variable name. The 
 second and third columns are either the mean and standard error of the coefficients, or the median and standard error of the 
 cross-sectional odds-ratios if \code{display.OR=TRUE}. 
 
-The fourth and fifth columns are the 95\% credible intervals of the coefficients (odds-ratios). The sixth column displays the 
+The fourth and fifth columns are the end-points of the credible intervals of the coefficients (odds-ratios). The sixth column displays the 
 posterior \eqn{t}-statistic, calculated as the ratio of the posterior mean on the posterior standard deviation for the coefficient. 
 The seventh column is the importance rank assigned to the variable by the Bayesian feature ranking algorithm. 
 
-In betwen the seventh and eighth columns are up to two asterisks indicating significance; a variable scores a first asterisk if 
+In between the seventh and eighth columns are up to two asterisks indicating significance; a variable scores a first asterisk if 
 the 75\% credible interval does not include zero, and scores a second asterisk if the 95\% credible interval does not include zero. The 
-final column gives an estimate of the effective sample size for the variable, ranging from 0 to 100, which indicates how much 
-autocorrelation is present in the sample chain for this variable (smaller values indicating high levels of autocorrelation).
+final column gives an estimate of the effective sample size for the variable, ranging from 0 to n.samples, which indicates the 
+effective number of i.i.d draws from the posterior (if we could do this instead of using MCMC) represented by the samples
+we have drawn. This quantity is computed using the algorithm presented in the Stan Bayesian sampling package documentation.
 }
 
 \examples{
@@ -78,8 +82,8 @@ rv.hs <- bayesreg(y~.,df,prior="hs")       # Horseshoe regression
 # Summarise without sorting by variable rank
 rv.hs.s <- summary(rv.hs)
 
-# Summarise sorting by variable rank
-rv.hs.s <- summary(rv.hs, sort.rank = TRUE)
+# Summarise sorting by variable rank and provide 75\% credible intervals
+rv.hs.s <- summary(rv.hs, sort.rank = TRUE, CI=75)
 
 }
 \seealso{
