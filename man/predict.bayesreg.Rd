@@ -76,6 +76,15 @@ if \code{type="prob"}.
 
 \examples{
 
+
+# The examples below that are run by CRAN use n.cores=2 to limit the number 
+# of cores to two for CRAN check compliance.
+
+# In practice you can simply omit this option to let bayesreg use as many
+# as are available (which is usually total number of cores - 1)
+
+# If you do not want to use multiple cores you can set parallel=F
+
 # -----------------------------------------------------------------
 # Example 1: Fitting linear models to data and generating credible intervals
 X = 1:10;
@@ -83,7 +92,7 @@ y = c(-0.6867, 1.7258, 1.9117, 6.1832, 5.3636, 7.1139, 9.5668, 10.0593, 11.4044,
 df = data.frame(X,y)
 
 # Gaussian ridge
-rv.L <- bayesreg(y~., df, model = "laplace", prior = "ridge", n.samples = 1e3)
+rv.L <- bayesreg(y~., df, model = "laplace", prior = "ridge", n.samples = 1e3, n.cores = 2)
 
 # Plot the different estimates with credible intervals
 plot(df$X, df$y, xlab="x", ylab="y")
@@ -106,7 +115,7 @@ y = c(-0.6867, 1.7258, 1.9117, 6.1832, 5.3636, 7.1139, 9.5668, 10.0593, 11.4044,
 df = data.frame(X,y)
 
 # Gaussian ridge
-rv.G <- bayesreg(y~., df, model = "gaussian", prior = "ridge", n.samples = 1e3)
+rv.G <- bayesreg(y~., df, model = "gaussian", prior = "ridge", n.samples = 1e3, n.cores = 2)
 
 # Produce predictive density for X=2
 df.tst = data.frame(y=seq(-7,12,0.01),X=2)

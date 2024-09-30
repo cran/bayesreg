@@ -4,7 +4,14 @@
 \alias{summary.bayesreg}
 \title{Summarization method for Bayesian penalised regression (\code{bayesreg}) models}
 \usage{
-\method{summary}{bayesreg}(object, sort.rank = FALSE, display.OR = FALSE, CI = 95, ...)
+\method{summary}{bayesreg}(
+  object,
+  sort.rank = FALSE,
+  display.OR = FALSE,
+  CI = 95,
+  max.rows = NA,
+  ...
+)
 }
 \arguments{
 \item{object}{An object of class \code{"bayesreg"} created as a result of a call to \code{\link{bayesreg}}.}
@@ -16,6 +23,8 @@ the Bayesian feature ranking algorithm.}
 regression coefficients (logistic regression only).}
 
 \item{CI}{numerical; the level of the credible interval reported in summary. Default is 95 (i.e., 95\% credible interval).}
+
+\item{max.rows}{numerical; the maximum number of rows (variables) to display in the summary. Default is to display all variables.}
 
 \item{...}{Further arguments passed to or from other methods.}
 }
@@ -77,7 +86,8 @@ b[1:9] = c(0,0,0,0,5,4,3,2,1)
 y = X \%*\% b + rnorm(100, 0, 1)
 df <- data.frame(X,y)
 
-rv.hs <- bayesreg(y~.,df,prior="hs")       # Horseshoe regression
+# Horseshoe regression (using max 2 cores for CRAN check compliance)
+rv.hs <- bayesreg(y~.,df,prior="hs",n.cores=2)       
 
 # Summarise without sorting by variable rank
 rv.hs.s <- summary(rv.hs)

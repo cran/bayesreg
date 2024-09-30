@@ -15,6 +15,7 @@
 #' @param burnin Number of burn-in samples.
 #' @param thin Desired level of thinning.
 #' @param t.dof Degrees of freedom for the Student-t distribution.
+#' @param n.cores Maximum number of cores to use; if \code{n.cores=Inf} then Bayesreg automatically sets this to one less than the maximum number of available cores. If \code{n.cores=1} then no parallelization occurs.
 #' @section Details:
 #' Draws a series of samples from the posterior distribution of a linear (Gaussian, Laplace or Student-t) or generalized linear (logistic binary, Poisson, geometric) regression model with specified continuous 
 #' shrinkage prior distribution (ridge regression, lasso, horseshoe and horseshoe+) using Gibbs sampling. The intercept parameter is always included, and is never penalised.
@@ -23,6 +24,14 @@
 #' of the regression coefficients, the code will use either Rue's algorithm (when the number of samples is twice the number of covariates) or the algorithm of 
 #' Bhattacharya et al. as appropriate. Factor variables are automatically grouped together and 
 #' additional shrinkage is applied to the set of indicator variables to which they expand.
+#' 
+#' If \code{n.cores > 1} then Bayesreg will divide the total sampling process between a number of independent sampling chains, with each chain being run on
+#' a seperate core. If \code{n.cores=Inf} then Bayesreg will use one less than the total number of available cores.
+#' If \code{n.cores} is a positive integer, then this is the maximum number of cores Bayesreg will use, though Bayesreg will cap this at the total number of available cores minus one. 
+#' The total number of samples are split evenly between the number of cores being utilised, and after sampling
+#' the different chains are recombined into a single body of samples. Each chain will perform
+#' \code{burnin} burn-in sampling iterations before collecting samples, so the improvement in speed from
+#' using from multiple cores will be greater if \code{n.samples*thin} is substantially greater than \code{burnin}.
 #' 
 #' @return An object with S3 class \code{"bayesreg"} containing the results of the sampling process, plus some additional information.
 #' \item{beta}{Posterior samples the regression model coefficients.}
@@ -46,12 +55,13 @@
 #' \item{thin}{The level of thinning.}
 #' \item{n}{The sample size of the data used to fit the model.}
 #' \item{p}{The number of covariates in the fitted model.}
+#' \item{n.cores}{The number of cores actually used during sampling.}
 #' 
 #' @references 
 #' 
 #' Makalic, E. & Schmidt, D. F.
 #' High-Dimensional Bayesian Regularised Regression with the BayesReg Package
-#' arXiv:1611.06649 [stat.CO], 2016 \url{https://arxiv.org/pdf/1611.06649.pdf}
+#' arXiv:1611.06649 [stat.CO], 2016 \url{http://arxiv.org/pdf/1611.06649}
 #' 
 #' Park, T. & Casella, G. 
 #' The Bayesian Lasso 
@@ -63,7 +73,7 @@
 #' 
 #' Makalic, E. & Schmidt, D. F. 
 #' A Simple Sampler for the Horseshoe Estimator 
-#' IEEE Signal Processing Letters, Vol. 23, pp. 179-182, 2016 \url{https://arxiv.org/pdf/1508.03884v4.pdf}
+#' IEEE Signal Processing Letters, Vol. 23, pp. 179-182, 2016 \url{http://arxiv.org/pdf/1508.03884v4}
 #' 
 #' Bhadra, A.; Datta, J.; Polson, N. G. & Willard, B. 
 #' The Horseshoe+ Estimator of Ultra-Sparse Signals 
@@ -93,7 +103,7 @@
 #'   
 #' Makalic, E. & Schmidt, D. F.
 #' High-Dimensional Bayesian Regularised Regression with the BayesReg Package
-#' arXiv:1611.06649 [stat.CO], 2016 \url{https://arxiv.org/pdf/1611.06649.pdf}
+#' arXiv:1611.06649 [stat.CO], 2016 \url{http://arxiv.org/pdf/1611.06649}
 #' 
 #' A MATLAB implementation of the bayesreg function is also available from:
 #' 
@@ -103,6 +113,28 @@
 #' 
 #' @seealso The prediction function \code{\link{predict.bayesreg}} and summary function \code{\link{summary.bayesreg}}
 #' @examples 
+#' # -----------------------------------------------------------------
+#' # By default Bayesreg now utilizes multiple cores if you have them
+#' # available. If you do not want to use multiple cores you can set 
+#' # n.cores=1 when calling Bayesreg.
+#' #
+#' # In most realistic/practical settings, i.e., when a 
+#' # even a moderate number of samples is being requested, parallelization 
+#' # will usually result in substantial speedups, and can dramatically reduce
+#' # run-time for large numbers of samples.
+#' #
+#' # However, if your design matrix and desired number of samples 
+#' # are small (i.e, small nrow(X), ncol(X) and n.samples) 
+#' # then sometimes no parallelization, or parallelization with a small
+#' # number of cores, can be quicker due to the overhead of setting up 
+#' # multiple threads. This is likely only relevant if you are calling Bayesreg
+#' # hundreds/thousands of times with *small* numbers of samples being requested
+#' # for each call, e.g., if you are doing some sort of one-at-a-time testing
+#' # across many predictors such as a genome-wide association test, or similar.
+#' # In this case you may be better off parallelizing the calls to 
+#' # Bayesreg across the tests and disabling parallelization when calling 
+#' # Bayesreg (i.e., n.cores=1).
+#' #
 #' # -----------------------------------------------------------------
 #' # Example 1: Gaussian regression
 #' X = matrix(rnorm(100*20),100,20)
@@ -114,7 +146,10 @@
 #' rv.lm <- lm(y~.,df)                        # Regular least-squares
 #' summary(rv.lm)
 #' 
-#' rv.hs <- bayesreg(y~.,df,prior="hs")       # Horseshoe regression
+#' # Horseshoe regression -- here we show how to explicitly control the maximum
+#' # number of cores being used for sampling to 4
+#' rv.hs <- bayesreg(y~., df, prior="hs", n.cores=4)       
+#' rv.hs$n.cores  # actual number of cores used (will be <= 4, depending on machine)
 #' rv.hs.s <- summary(rv.hs)
 #' 
 #' # Expected squared prediction error for least-squares
@@ -157,7 +192,7 @@
 #' # -----------------------------------------------------------------
 #' # Example 3: Poisson/geometric regression example
 #' 
-#' X  = matrix(rnorm(100*20),100,5)
+#' X  = matrix(rnorm(100*5),100,5)
 #' b  = c(0.5,-1,0,0,1)
 #' nu = X%*%b + 1
 #' y  = rpois(lambda=exp(nu),n=length(nu))
@@ -165,11 +200,11 @@
 #' df <- data.frame(X,y)
 #'
 #' # Fit a Poisson regression
-#' rv.pois=bayesreg(y~.,data=df,model="poisson",prior="hs", burnin=1e4, n.samples=1e4)
+#' rv.pois=bayesreg(y~.,data=df,model="poisson",prior="hs", burnin=1e4, n.samples=5e4)
 #' summary(rv.pois)
 #' 
 #' # Fit a geometric regression
-#' rv.geo=bayesreg(y~.,data=df,model="geometric",prior="hs", burnin=1e4, n.samples=1e4)
+#' rv.geo=bayesreg(y~.,data=df,model="geometric",prior="hs", burnin=1e4, n.samples=5e4)
 #' summary(rv.geo)
 #' 
 #' # Compare the two models in terms of their WAIC scores
@@ -190,6 +225,7 @@
 #' spambase.tst = spambase[-seq(1,nrow(spambase),10),]
 #'   
 #' # Fit a model using logistic horseshoe for 2,000 samples
+#' # In practice, > 10,000 samples would be a more realistic amount to draw
 #' rv <- bayesreg(is.spam ~ ., spambase.tr, model = "logistic", prior = "horseshoe", n.samples = 2e3)
 #'   
 #' # Summarise, sorting variables by their ranking importance
@@ -213,9 +249,9 @@
 #' @export
 #' 
 #' 
-bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1e3, burnin = 1e3, thin = 5, t.dof = 5)
+bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1e3, burnin = 1e3, thin = 5, t.dof = 5, n.cores = Inf)
 {
-  VERSION = '1.2'
+  VERSION = '1.3'
   groups  = NA
   display = F
   rankvars = T
@@ -224,7 +260,7 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
   
   # Return object
   rv = list()
-
+  
   # -------------------------------------------------------------------    
   # model/target distribution types
   SMN   = T
@@ -250,6 +286,12 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
   {
     SMN = F
     MH  = T
+  }
+  else if (model == 'binomialmh')
+  {
+    SMN = F
+    MH = T
+    model = 'logistic'
   }
   else
   {
@@ -314,7 +356,7 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
     }
   }
   groups = groups[2:length(groups)]  
-
+  
   # Convert to a numeric matrix and drop the target variable
   X = as.matrix(X)
   X = X[,-1,drop=FALSE]
@@ -322,7 +364,7 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
   # 
   n = nrow(X)
   p = ncol(X)
-
+  
   # -------------------------------------------------------------------
   # Prior types
   if (prior == 'ridge' || prior == 'rr')
@@ -353,19 +395,19 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
   b        = matrix(0,p,1)
   omega2   = matrix(1,n,1)
   sigma2   = 1
-
+  
   tau2     = 1
   xi       = 1
   
   lambda2  = matrix(1,p,1)
   nu       = matrix(1,p,1)
-
+  
   eta2     = matrix(1,p,1)
   phi      = matrix(1,p,1)
-
+  
   kappa    = y - 1/2
   z        = y
-
+  
   # Quantities for computing WAIC 
   waicProb   = matrix(0,n,1) 
   waicLProb  = matrix(0,n,1)
@@ -379,7 +421,7 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
     # Switch to Bhatta's MVN sampling algorithm
     mvnrue = F
   }
-  
+
   # Precompute XtX?
   XtX  = NA
   Xty  = NA
@@ -418,6 +460,14 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
       rv.gd = bayesreg.fit.GLM.gd(X, y, model, 1, 10, 1e3)
       rv.mh = bayesreg.mgrad.L(y, X, as.vector(c(rv.gd$b,rv.gd$b0)), NULL, model, extra.model.params, Xty)
     }
+    if (model == 'logistic')
+    {
+      extra.model.params = NULL
+      
+      Xty   = crossprod(X,y)
+      rv.gd = bayesreg.fit.GLM.gd(X, y, model, 1, 10, 1e3)
+      rv.mh = bayesreg.mgrad.L(y, X, as.vector(c(rv.gd$b,rv.gd$b0)), NULL, model, extra.model.params, Xty)
+    }
     
     # Initialise variables
     b      = rv.gd$b
@@ -432,7 +482,11 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
     mh.tune = bayesreg.mh.initialise(75, 1e2, 1e-7, burnin, T)
     mh.tune$delta = 0.0002
   }
-
+  else
+  {
+    rv.gd = NULL
+  }
+  
   # Set up group shrinkage parameters if required
   ng = 0
   if (length(groups) > 1)
@@ -454,7 +508,7 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
     rho2    = matrix(1,1,1)
     zeta    = matrix(1,1,1)
   }
-
+  
   # Setup return object
   rv$formula   = formula
   rv$model     = model
@@ -468,7 +522,7 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
   rv$n         = n
   rv$p         = p
   rv$tss       = sum((y - mean(y))^2)
-
+  
   rv$beta0     = matrix(0,1,n.samples)
   rv$beta      = matrix(0,p,n.samples)
   rv$mu.beta   = matrix(0,p,1)
@@ -484,6 +538,29 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
   
   rv$t.stat    = matrix(0,p,1)
 
+  # Determine number of available cores for parallelization
+  # n.cores = 1 disables parallelization
+  if (n.cores <= 0 || floor(n.cores) != n.cores)
+  {
+    stop("n.cores must be an integer > 0")
+  }
+
+  # Find out how many cores are available
+  n.available.cores = parallel::detectCores()[1] - 1
+  n.cores = min(n.available.cores, n.cores)
+
+  # check if in CRAN test environment -- if so, limit cores to max 2
+  chk = Sys.getenv("_R_CHECK_LIMIT_CORES_","")
+  if (nzchar(chk) && (chk == "true" || chk == "TRUE"))
+  {
+    # No more than 2 cores for CRAN
+    n.cores = min(n.cores, 2L)
+  }  
+
+  # Compute the number of samples for each core
+  n.samples.per.core = ceiling(n.samples/n.cores)
+  rv$n.cores = n.cores
+  
   # Print the banner  
   if (display)
   {
@@ -492,10 +569,299 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
     printf('|                     (c) Enes Makalic, Daniel F Schmidt. 2016-2021                      |\n');
     printf('==========================================================================================\n');
   }
+  
+  # ======================================================================================
+  # Main sampling loop
+  if (n.cores > 1)
+  {  
+    # Register a cluster 
+    cores   = parallel::detectCores()
+    cluster = parallel::makeCluster(n.cores)
+    doParallel::registerDoParallel(cluster)
+    
+    # Sample each chain    
+    rv.final = foreach::foreach(i=1:n.cores) %dopar%
+      {
+        rv.samples = bayesreg.sample.chain(X, y, z, p, n, n.samples.per.core, burnin, thin, mvnrue, groups, XtX, Xty, model, prior, t.dof, PrecomputedXtX, rv.gd, SMN, MH)
+        rv.samples
+      }
+    
+    # Done -- close the cluster
+    parallel::stopCluster(cluster)
+  } 
+  else
+  {
+    rv.final = list()
+    rv.final[[1]] = bayesreg.sample.chain(X, y, z, p, n, n.samples.per.core, burnin, thin, mvnrue, groups, XtX, Xty, model, prior, t.dof, PrecomputedXtX, rv.gd, SMN, MH)
+  }
+  
+  for (i in 1:n.cores)
+  {
+    if (i == 1)
+    {
+      rv$beta0     = rv.final[[i]]$beta0
+      rv$beta      = rv.final[[i]]$beta
+      rv$mu.beta   = rv.final[[i]]$mu.beta
+      rv$mu.beta0  = rv.final[[i]]$mu.beta0
+      rv$sigma2    = rv.final[[i]]$sigma2
+      rv$mu.sigma2 = rv.final[[i]]$mu.sigma2
+      rv$tau2      = rv.final[[i]]$tau2 
+      
+      waicProb     = rv.final[[i]]$waicProb
+      waicLProb    = rv.final[[i]]$waicLProb
+      waicLProb2   = rv.final[[i]]$waicLProb2
+    }
+    else
+    {
+      rv$beta0     = cbind(rv$beta0, rv.final[[i]]$beta0)
+      rv$beta      = cbind(rv$beta, rv.final[[i]]$beta)
+      rv$mu.beta   = rv$mu.beta + rv.final[[i]]$mu.beta
+      rv$mu.beta0  = rv$mu.beta0 + rv.final[[i]]$mu.beta0
+      rv$sigma2    = cbind(rv$sigma2, rv.final[[i]]$sigma2)
+      rv$mu.sigma2 = rv$mu.sigma2 + rv.final[[i]]$mu.sigma2
+      rv$tau2      = cbind(rv$tau2, rv.final[[i]]$tau2)
+      
+      waicProb     = waicProb + rv.final[[i]]$waicProb
+      waicLProb    = waicLProb + rv.final[[i]]$waicLProb
+      waicLProb2   = waicLProb2 + rv.final[[i]]$waicLProb2      
+    }
+  }
+  
+  # Trim off any excess samples (from running on multiple cores)
+  rv$beta0 = rv$beta0[1:n.samples]
+  if (nrow(rv$beta) > 1)
+  {
+    rv$beta = rv$beta[,1:n.samples]
+  }
+  else
+  {
+    rv$beta = t(as.matrix(rv$beta[,1:n.samples]))
+  }
+  rv$sigma2 = rv$sigma2[1:n.samples]
+  rv$tau2 = rv$tau2[1:n.samples]
+  
+  rv$n.samples = n.samples
+  
+  #
+  rv$mu.beta   = rv$mu.beta / n.samples
+  rv$mu.beta0  = rv$mu.beta0 / n.samples
+  rv$mu.sigma2 = rv$mu.sigma2 / n.samples
+  
+  # ===================================================================
+  # Rank features, if requested
+  if (rankvars)
+  {
+    # Run the BFR
+    ranks = bayesreg.bfr(rv)
+    
+    # Determine the 75th percentile
+    rv$var.ranks = rep(NA,p+1)
+    q = apply(ranks,1,function(x) stats::quantile(x,0.75))
+    O = sort(q,index.return = T)
+    O = O$ix
+    
+    j = 1
+    k = 1
+    for (i in 1:p)
+    {
+      if (i >= 2)
+      {
+        if (q[O[i]] != q[O[i-1]])
+        {
+          j = j+k
+          k = 1
+        }
+        else
+        {
+          k = k+1
+        }
+      }
+      rv$var.ranks[O[i]] = j
+    }
+  }
+  else
+  {
+    rv$var.ranks = rep(NA, p+1)
+  }
+  
+  # ===================================================================
+  # Compute the t-statistics
+  for (i in 1:p)
+  {
+    rv$t.stat[i] = rv$mu.beta[i] / stats::sd(rv$beta[i,])
+  }
+  
+  # ===================================================================
+  # Compute other model statistics
+  rv$yhat    = as.matrix(X) %*% matrix(rv$mu.beta, p, 1) + as.numeric(rv$mu.beta0)
+  rv$r2      = 1 - sum((y - rv$yhat)^2)/rv$tss
+  rv$rootmse = mean((y - rv$yhat)^2)
+  
+  # ===================================================================
+  # Compute WAIC score and log-likelihoods
+  rv$waic.dof = sum(waicLProb2/n.samples) - sum((waicLProb/n.samples)^2)
+  rv$waic     = -sum(log(waicProb/n.samples)) + rv$waic.dof
+  
+  if (model == 'logistic')
+  {
+    rv$log.l  = -bayesreg.logregnlike(X, y, rv$mu.beta, rv$mu.beta0)
+    rv$log.l0 = -bayesreg.logregnlike(X, y, matrix(0,p,1), log(sum(y)/(n-sum(y))))
+  }
+  # Count regression
+  else if (model == 'poisson' || model == 'geometric')
+  {
+    rv$log.l  = -bayesreg.countregnlike(model, as.matrix(X), as.matrix(y), rv$mu.beta, rv$mu.beta0)
+    rv$log.l0 = -bayesreg.countregnlike(model, X, y, matrix(0,p,1), log(mean(y)))
+    
+    # Compute overdispersion as well
+    mu.eta = as.matrix(X) %*% as.matrix(rv$mu.beta) + as.numeric(rv$mu.beta0)
+    if (model == 'poisson')
+    {
+      rv$over.dispersion = mean( (y-exp(mu.eta))^2 / exp(mu.eta) )
+    }
+    else
+    {
+      geo.p = 1/(exp(mu.eta)+1)
+      rv$over.dispersion = mean( (y-exp(mu.eta))^2 / ((1-geo.p)/geo.p^2) )
+    }
+  }
+  # Otherwise continuous targets
+  else
+  {
+    rv$log.l  = -bayesreg.linregnlike(model, as.matrix(X), as.matrix(y), rv$mu.beta, rv$mu.beta0, rv$mu.sigma2, rv$t.dof)
+  }
+  
+  # ===================================================================
+  # Rescale the coefficients
+  if (p == 1)
+  {
+    rv$beta  <- t(as.matrix(apply(t(rv$beta), 1, function(x)(x / std.X$std.X))))
+  }
+  else
+  {
+    rv$beta  <- as.matrix(apply(t(rv$beta), 1, function(x)(x / std.X$std.X)))
+  }
+  rv$beta0 <- rv$beta0 - std.X$mean.X %*% rv$beta
+  
+  rv$mu.beta  <- rv$mu.beta / t(std.X$std.X)
+  rv$mu.beta0 <- rv$mu.beta0 - std.X$mean.X %*% rv$mu.beta
+  
+  rv$std.X = std.X
+  
+  # ===================================================================
+  # Compute effective sample sizes
+  rv$ess.frac = rep(NA, p)
+  for (i in 1:p)
+  {
+    e = bayesreg.ess(rv$beta[i,])
+    rv$ess.frac[i] = e$ess.frac
+  }
+  rv$ess.frac[ rv$ess.frac > 1 ] = 1
+  rv$ess = ceiling(rv$ess.frac * n.samples)
+  
+  # assign name to beta matrix
+  rownames(rv$beta) = labels(rv$mu.beta)[[1]]  
+  
+  class(rv) = "bayesreg"
+  return(rv)
+}
 
+# ============================================================================================================================
+# Main sampling routine -- sample a single chain
+bayesreg.sample.chain <- function(X, y, z, p, n, n.samples, burnin, thin, mvnrue, groups, XtX, Xty, model, prior, t.dof, PrecomputedXtX, rv.gd, SMN, MH)
+{
+  # Initial values
+  ydiff    = 0
+  b0       = 0
+  b        = matrix(0,p,1)
+  omega2   = matrix(1,n,1)
+  sigma2   = 1
+  
+  tau2     = 1
+  xi       = 1
+  
+  lambda2  = matrix(1,p,1)
+  nu       = matrix(1,p,1)
+  
+  eta2     = matrix(1,p,1)
+  phi      = matrix(1,p,1)
+  
+  kappa    = y - 1/2
+  z        = y
+  
+  # Quantities for computing WAIC 
+  waicProb   = matrix(0,n,1) 
+  waicLProb  = matrix(0,n,1)
+  waicLProb2 = matrix(0,n,1)
+  
+  # Set up group shrinkage parameters if required
+  ng = 0
+  if (length(groups) > 1)
+  {
+    ngroups = length(unique(groups))
+    groups[is.na(groups)] = ngroups
+    delta2  = matrix(1,ngroups,1)
+    chi     = matrix(1,ngroups,1)
+    rho2    = matrix(1,ngroups,1)
+    zeta    = matrix(1,ngroups,1)
+    ngroups = ngroups-1
+  }
+  else
+  {
+    ngroups = 1
+    groups  = matrix(1,1,p)
+    delta2  = matrix(1,1,1)
+    chi     = matrix(1,1,1)
+    rho2    = matrix(1,1,1)
+    zeta    = matrix(1,1,1)
+  }
+  
+  # Initialise variables for MH if needed
+  if (MH)
+  {
+    if (model == 'poisson')
+    {
+      extra.model.params = NULL
+      rv.mh = bayesreg.mgrad.L(y, X, as.vector(c(rv.gd$b,rv.gd$b0)), NULL, model, extra.model.params, Xty)
+    }
+    if (model == 'geometric')
+    {
+      extra.model.params = 1
+      rv.mh = bayesreg.mgrad.L(y, X, as.vector(c(rv.gd$b,rv.gd$b0)), NULL, model, extra.model.params, Xty)
+    }    
+    if (model == 'logistic')
+    {
+      extra.model.params = NULL
+      rv.mh = bayesreg.mgrad.L(y, X, as.vector(c(rv.gd$b,rv.gd$b0)), NULL, model, extra.model.params, Xty)
+    }
+    
+    b      = rv.gd$b
+    b0     = rv.gd$b0
+    L.b    = rv.mh$L
+    grad.b = rv.mh$grad[1:p]
+    eta    = rv.mh$eta
+    H.b0   = rv.mh$H.b0
+    
+    extra.stats = NULL
+    
+    mh.tune = bayesreg.mh.initialise(75, 1e2, 1e-7, burnin, T)
+    mh.tune$delta = 0.0002
+  }  
+  
+  # Samples (return values)
+  rv           = list()
+  rv$beta0     = matrix(0,1,n.samples)
+  rv$beta      = matrix(0,p,n.samples)
+  rv$mu.beta   = matrix(0,p,1)
+  rv$mu.beta0  = matrix(0,1,1)
+  rv$sigma2    = matrix(0,1,n.samples)
+  rv$mu.sigma2 = matrix(0,1,1)
+  rv$tau2      = matrix(0,1,n.samples)  
+  
   # Main sampling loop
   k    = 0
   iter = 0
+  
   while (k < n.samples)
   {
     # If using scale-mixture of normals sampler
@@ -507,11 +873,11 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
       {
         z = kappa * omega2
       }
-  
+      
       bs  = bayesreg.sample_beta(X, z, mvnrue, b0, sigma2, tau2, lambda2 * delta2[groups], omega2, XtX, Xty, model, PrecomputedXtX)
       muB = bs$m
       b   = bs$x
-   
+      
       # ===================================================================
       # Sample intercept (b0)
       W         = sum(1 / omega2)
@@ -532,7 +898,7 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
       # Sample b0 and update residuals
       b0      = stats::rnorm(1, muB0, sqrt(v))    
       e       = e-b0
-  
+      
       # ===================================================================
       # Sample the noise scale parameter sigma2
       mu.sigma2   = NA
@@ -577,7 +943,7 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
       if (iter %% 25 == 0)
       {
         b0.new = rnorm(n=1, mean=b0, sd=sqrt(2.5/rv.mh$H.b0))
-        if (model == "poisson" || model == "geometric")
+        if (model == "poisson" || model == "geometric" || model == "logistic")
         {
           rv.mh = bayesreg.mgrad.L(y, X, c(b,b0), eta-b0+b0.new, model, extra.model.params, Xty)
           #[L_bnew, grad_bnew, H_b0new, ~, extra_stats_new] = br_mGradL(y, X, [b;b0], eta-b0+b0_new, model, extra_model_params, Xty);
@@ -607,7 +973,7 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
       mu = sqrt(2 * sigma2 / e^2)
       omega2 = 1 / bayesreg.rinvg(mu,1/2)
     }
-
+    
     # -------------------------------------------------------------------
     # Student-t
     if (model == 't')
@@ -617,15 +983,15 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
       scale = (e^2/sigma2+t.dof)/2
       omega2 = as.matrix(1 / stats::rgamma(n, shape=shape, scale=1/scale), n, 1)
     }
-
+    
     # -------------------------------------------------------------------
     # Logistic
-    if (model == 'logistic')
+    if (model == 'logistic' && SMN)
     {
       #omega2 = 1 / rpg.devroye(num = n, n = 1, z = b0 + X %*% b)
       omega2 = as.matrix(1 / pgdraw::pgdraw(1, b0+X%*%b), n, 1)
     }
-
+    
     # ===================================================================
     # Sample the global shrinkage parameter tau2 (and L.V. xi)
     # hs/hs+/ridge use tau2 ~ C+(0,1)
@@ -634,7 +1000,7 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
       shape = (p+1)/2
       scale = 1/xi + sum(b^2 / lambda2 / delta2[groups]) / 2 / sigma2
       tau2  = 1 / stats::rgamma(1, shape=shape, scale=1/scale)
-  
+      
       # Sample xi
       scale = 1 + 1/tau2
       xi    = scale / stats::rexp(1)
@@ -658,7 +1024,7 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
         # Sample lambda2
         scale   = 1/nu + b^2 / 2 / tau2 / sigma2 / delta2[groups]
         lambda2 = scale / stats::rexp(p)
-
+        
         scale = 1 + 1/lambda2
         nu    = scale / stats::rexp(p)
       }
@@ -669,7 +1035,7 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
         # Sample lambda2
         scale   = 1/nu + b^2 / 2 / tau2 / sigma2 / (delta2[groups]*eta2)
         lambda2 = scale / stats::rexp(p)
-
+        
         # Sample nu
         scale = 1 + 1/lambda2
         nu    = scale / stats::rexp(p)
@@ -714,7 +1080,7 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
             shape = (ng+1)/2
             scale = 1 / chi[i] + sum((b[groups==i]^2) / lambda2[groups==i]) / 2 / sigma2 / tau2
             delta2[i] = 1 / stats::rgamma(1, shape=shape, scale=1/scale)
-  
+            
             # Sample chi
             scale  = 1 + 1/delta2[i]
             chi[i] = 1 / stats::rgamma(1, shape=1, scale=1/scale)
@@ -786,14 +1152,21 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
         # Logistic regression
         else if (model == 'logistic')
         {
-          rv.ll = bayesreg.logregnlike_eta(y, y-e)
+          if (SMN)
+          {
+            rv.ll = bayesreg.logregnlike_eta(y, y-e)
+          }
+          else
+          {
+            rv.ll = bayesreg.logregnlike_eta(y,eta)
+          }
         }
         # Count regression
         else
         {
           rv.ll = bayesreg.countregnlike_eta(model, y, eta)
         }
-
+        
         waicProb   = waicProb + rv.ll$prob
         waicLProb  = waicLProb + rv.ll$negll
         waicLProb2 = waicLProb2 + rv.ll$negll^2
@@ -808,125 +1181,12 @@ bayesreg <- function(formula, data, model='normal', prior='ridge', n.samples = 1
     }
   }
   
-  #
-  rv$mu.beta   = rv$mu.beta / n.samples
-  rv$mu.beta0  = rv$mu.beta0 / n.samples
-  rv$mu.sigma2 = rv$mu.sigma2 / n.samples
+  # Store extra info
+  rv$waicProb = waicProb
+  rv$waicLProb = waicLProb
+  rv$waicLProb2 = waicLProb2
   
-  # ===================================================================
-  # Rank features, if requested
-  if (rankvars)
-  {
-    # Run the BFR
-    ranks = bayesreg.bfr(rv)
-
-    # Determine the 75th percentile
-    rv$var.ranks = rep(NA,p+1)
-    q = apply(ranks,1,function(x) stats::quantile(x,0.75))
-    O = sort(q,index.return = T)
-    O = O$ix
-    
-    j = 1
-    k = 1
-    for (i in 1:p)
-    {
-      if (i >= 2)
-      {
-        if (q[O[i]] != q[O[i-1]])
-        {
-          j = j+k
-          k = 1
-        }
-        else
-        {
-          k = k+1
-        }
-      }
-      rv$var.ranks[O[i]] = j
-    }
-  }
-  else
-  {
-    rv$var.ranks = rep(NA, p+1)
-  }
-  
-  # ===================================================================
-  # Compute the t-statistics
-  for (i in 1:p)
-  {
-    rv$t.stat[i] = rv$mu.beta[i] / stats::sd(rv$beta[i,])
-  }
-  
-  # ===================================================================
-  # Compute other model statistics
-  rv$yhat    = as.matrix(X) %*% matrix(rv$mu.beta, p, 1) + as.numeric(rv$mu.beta0)
-  rv$r2      = 1 - sum((y - rv$yhat)^2)/rv$tss
-  rv$rootmse = mean((y - rv$yhat)^2)
-
-  # ===================================================================
-  # Compute WAIC score and log-likelihoods
-  rv$waic.dof = sum(waicLProb2/n.samples) - sum((waicLProb/n.samples)^2)
-  rv$waic     = -sum(log(waicProb/n.samples)) + rv$waic.dof
-
-  if (model == 'logistic')
-  {
-    rv$log.l  = -bayesreg.logregnlike(X, y, rv$mu.beta, rv$mu.beta0)
-    rv$log.l0 = -bayesreg.logregnlike(X, y, matrix(0,p,1), log(sum(y)/(n-sum(y))))
-  }
-  # Count regression
-  else if (model == 'poisson' || model == 'geometric')
-  {
-    rv$log.l  = -bayesreg.countregnlike(model, as.matrix(X), as.matrix(y), rv$mu.beta, rv$mu.beta0)
-    rv$log.l0 = -bayesreg.countregnlike(model, X, y, matrix(0,p,1), log(mean(y)))
-    
-    # Compute overdispersion as well
-    mu.eta = as.matrix(X) %*% as.matrix(rv$mu.beta) + as.numeric(rv$mu.beta0)
-    if (model == 'poisson')
-    {
-      rv$over.dispersion = mean( (y-exp(mu.eta))^2 / exp(mu.eta) )
-    }
-    else
-    {
-      geo.p = 1/(exp(mu.eta)+1)
-      rv$over.dispersion = mean( (y-exp(mu.eta))^2 / ((1-geo.p)/geo.p^2) )
-    }
-  }
-  # Otherwise continuous targets
-  else
-  {
-    rv$log.l  = -bayesreg.linregnlike(model, as.matrix(X), as.matrix(y), rv$mu.beta, rv$mu.beta0, rv$mu.sigma2, rv$t.dof)
-  }
-
-  # ===================================================================
-  # Rescale the coefficients
-  if (p == 1)
-  {
-    rv$beta  <- t(as.matrix(apply(t(rv$beta), 1, function(x)(x / std.X$std.X))))
-  }
-  else
-  {
-    rv$beta  <- as.matrix(apply(t(rv$beta), 1, function(x)(x / std.X$std.X)))
-  }
-  rv$beta0 <- rv$beta0 - std.X$mean.X %*% rv$beta
-  
-  rv$mu.beta  <- rv$mu.beta / t(std.X$std.X)
-  rv$mu.beta0 <- rv$mu.beta0 - std.X$mean.X %*% rv$mu.beta
-
-  rv$std.X = std.X
-  
-  # ===================================================================
-  # Compute effective sample sizes
-  rv$ess.frac = rep(NA, p)
-  for (i in 1:p)
-  {
-    e = bayesreg.ess(rv$beta[i,])
-    rv$ess.frac[i] = e$ess.frac
-  }
-  rv$ess.frac[ rv$ess.frac > 1 ] = 1
-  rv$ess = ceiling(rv$ess.frac * n.samples)
-
-  class(rv) = "bayesreg"
-  return(rv)
+  rv
 }
 
 
@@ -952,8 +1212,16 @@ bayesreg.ess <- function(x)
 {
   n = length(x)
   s = min(c(n - 1, 2e4))
-  g = stats::acf(x, s, plot=F)
-
+  # Old SLOW code
+  #g = stats::acf(x, s, plot=F)
+  
+  # Find ACFs using FFT instead ...
+  g = list()
+  x = x-mean(x)
+  f = fft(x)
+  acf = fft(f*Conj(f),inverse=T)
+  g$acf = Re(acf[1:s]/acf[1])
+  
   i = seq(1,s-1,by=2)
   G = as.vector(g$acf[i]) + as.vector(g$acf[i+1])
   for (i in 2:length(G))
@@ -979,11 +1247,11 @@ bayesreg.ess <- function(x)
     }
     k = i
   }
-
+  
   rv = list()
   rv$ess = n/(-1 + 2*sum(G[1:k]))
   rv$ess.frac = rv$ess/n
-
+  
   # G = as.vector(g$acf[2:(s-1)]) + as.vector(g$acf[3:s])
   # G = G < 0
   # for (i in 1:length(G))
@@ -1075,6 +1343,16 @@ bayesreg.bfr <- function(rv)
 #' @seealso The model fitting function \code{\link{bayesreg}} and summary function \code{\link{summary.bayesreg}}
 #' @examples
 #' 
+#  # -----------------------------------------------------------------
+#'
+#' # The examples below that are run by CRAN use n.cores=2 to limit the number 
+#' # of cores to two for CRAN check compliance.
+#'
+#' # In practice you can simply omit this option to let bayesreg use as many
+#' # as are available (which is usually total number of cores - 1)
+#'
+#' # If you do not want to use multiple cores you can set parallel=F
+#'
 #' # -----------------------------------------------------------------
 #' # Example 1: Fitting linear models to data and generating credible intervals
 #' X = 1:10;
@@ -1082,7 +1360,7 @@ bayesreg.bfr <- function(rv)
 #' df = data.frame(X,y)
 #' 
 #' # Gaussian ridge
-#' rv.L <- bayesreg(y~., df, model = "laplace", prior = "ridge", n.samples = 1e3)
+#' rv.L <- bayesreg(y~., df, model = "laplace", prior = "ridge", n.samples = 1e3, n.cores = 2)
 #' 
 #' # Plot the different estimates with credible intervals
 #' plot(df$X, df$y, xlab="x", ylab="y")
@@ -1105,7 +1383,7 @@ bayesreg.bfr <- function(rv)
 #' df = data.frame(X,y)
 #' 
 #' # Gaussian ridge
-#' rv.G <- bayesreg(y~., df, model = "gaussian", prior = "ridge", n.samples = 1e3)
+#' rv.G <- bayesreg(y~., df, model = "gaussian", prior = "ridge", n.samples = 1e3, n.cores = 2)
 #' 
 #' # Produce predictive density for X=2
 #' df.tst = data.frame(y=seq(-7,12,0.01),X=2)
@@ -1219,6 +1497,10 @@ predict.bayesreg <- function(object, newdata, type = "linpred", bayes.avg = FALS
   # Extract the design matrix
   X = stats::model.matrix(f, data=newdata)
   X = as.matrix(X[,-1])
+  if (nrow(newdata) == 1)
+  {
+    X = t(X)
+  }
   n = nrow(X)
   p = ncol(X)
 
@@ -1438,6 +1720,7 @@ predict.bayesreg <- function(object, newdata, type = "linpred", bayes.avg = FALS
 #' @param display.OR logical; if \code{TRUE}, the variables will be summarised in terms of their cross-sectional odds-ratios rather than their 
 #' regression coefficients (logistic regression only).
 #' @param CI numerical; the level of the credible interval reported in summary. Default is 95 (i.e., 95\% credible interval).
+#' @param max.rows numerical; the maximum number of rows (variables) to display in the summary. Default is to display all variables.
 #' @param ... Further arguments passed to or from other methods.
 #' @section Details:
 #' The \code{summary} method computes a number of summary statistics and displays these for each variable in a table, along 
@@ -1490,7 +1773,8 @@ predict.bayesreg <- function(object, newdata, type = "linpred", bayes.avg = FALS
 #' y = X %*% b + rnorm(100, 0, 1)
 #' df <- data.frame(X,y)
 #' 
-#' rv.hs <- bayesreg(y~.,df,prior="hs")       # Horseshoe regression
+#' # Horseshoe regression (using max 2 cores for CRAN check compliance)
+#' rv.hs <- bayesreg(y~.,df,prior="hs",n.cores=2)       
 #' 
 #' # Summarise without sorting by variable rank
 #' rv.hs.s <- summary(rv.hs)
@@ -1501,355 +1785,360 @@ predict.bayesreg <- function(object, newdata, type = "linpred", bayes.avg = FALS
 #' @S3method summary bayesreg
 #' @method summary bayesreg
 #' @export
-summary.bayesreg <- function(object, sort.rank = FALSE, display.OR = FALSE, CI = 95, ...)
+summary.bayesreg <- function(object, sort.rank = FALSE, display.OR = FALSE, CI = 95, max.rows = NA, ...)
 {
-    VERSION = '1.2'
-    
-    # Credible interval must be between 1 and 99
-    CI = round(CI)
-    if (CI < 1 || CI > 99)
-    {
-      stop("Credible interval level must be between 1 and 99.")
-    }
-    CI.low  = (1 - CI/100)/2
-    CI.high = 1- CI.low
+  VERSION = '1.3'
   
-    if (!inherits(object,"bayesreg")) stop("Not a valid Bayesreg object.")
+  # Credible interval must be between 1 and 99
+  CI = round(CI)
+  if (CI < 1 || CI > 99)
+  {
+    stop("Credible interval level must be between 1 and 99.")
+  }
+  CI.low  = (1 - CI/100)/2
+  CI.high = 1- CI.low
   
-    printf <- function(...) cat(sprintf(...))
-    repchar <- function(c, n) paste(rep(c,n),collapse="")
-
-    n   = object$n
-    px  = object$p
+  if (!inherits(object,"bayesreg")) stop("Not a valid Bayesreg object.")
+  
+  printf <- function(...) cat(sprintf(...))
+  repchar <- function(c, n) paste(rep(c,n),collapse="")
+  
+  n   = object$n
+  px  = object$p
+  
+  if (is.na(max.rows))
+  {
+    max.rows = (px+1)
+  }
+  
+  PerSD = F
+  
+  rv = list()
+  
+  # Error checking
+  if (display.OR == T && object$model != "logistic")
+  {
+    stop("Can only display cross-sectional odds-ratios for logistic models.")
+  }
+  
+  # Banner
+  printf('==========================================================================================\n');
+  printf('|                   Bayesian Penalised Regression Estimation ver. %s                    |\n', VERSION);
+  printf('|                     (c) Enes Makalic, Daniel F Schmidt. 2016-2024                      |\n');
+  printf('==========================================================================================\n');
+  
+  # ===================================================================
+  # Table symbols
+  chline = '-'
+  cvline = '|'
+  cTT    = '+'
+  cplus  = '+'
+  bTT    = '+'
+  
+  # ===================================================================
+  # Find length of longest variable name
+  varnames = c(labels(object$mu.beta)[[1]], "(Intercept)")
+  maxlen   = 12
+  nvars    = length(varnames)
+  for (i in 1:nvars)
+  {
+    if (nchar(varnames[i]) > maxlen)
+    {
+      maxlen = nchar(varnames[i])
+    }
+  }
+  
+  # ===================================================================
+  # Display pre-table stuff
+  #printf('%s%s%s\n', repchar('=', maxlen+1), '=', repchar('=', 76))
+  #printf('\n')
+  
+  if (object$model != 'logistic')
+  {
+    model = 'linear'
+  } else {
+    model = 'logistic'
+  }
+  
+  if (object$model == "gaussian")
+  {
+    distr = "Gaussian"
+  } else if (object$model == "laplace")
+  {
+    distr = "Laplace"
+  }
+  else if (object$model == "t")
+  {
+    distr = paste0("Student-t (DOF = ",object$t.dof,")")
+  }
+  else if (object$model == "logistic")
+  {
+    distr = "logistic"
+  }
+  else if (object$model == "poisson")
+  {
+    distr = "Poisson"
+  }
+  else if (object$model == "geometric")
+  {
+    distr = "geometric"
+  }
+  
+  if (object$prior == 'rr' || object$prior == 'ridge') {
+    prior = 'ridge'
+  } else if (object$prior == 'lasso') {      
+    prior = 'lasso'
+  } else if (object$prior == 'hs' || object$prior == 'horseshoe') {
+    prior = 'horseshoe'
+  } else if (object$prior == 'hs+' || object$prior == 'horseshoe+') {
+    prior = 'horseshoe+'
+  }
+  
+  str = sprintf('Bayesian %s %s regression', distr, prior)
+  printf('%-64sNumber of obs   = %8d\n', str, n)
+  printf('%-64sNumber of vars  = %8.0f\n', '', px);
+  
+  if (object$model == 'gaussian' || object$model == 'laplace' || object$model == 't')
+  {
+    s2 = mean(object$sigma2)
+    if (object$model == 't' && object$t.dof > 2)
+    {
+      s2 = object$t.dof/(object$t.dof - 2) * s2
+    }
+    else if (object$model == 't' && object$t.dof <= 2)
+    {
+      s2 = NA
+    }
     
-    PerSD = F
-
-    rv = list()
-
-    # Error checking
-    if (display.OR == T && object$model != "logistic")
+    str = sprintf('MCMC Samples   = %6.0f', object$n.samples);
+    if (!is.na(s2))
     {
-      stop("Can only display cross-sectional odds-ratios for logistic models.")
+      printf('%-64sstd(Error)      = %8.5g\n', str, sqrt(s2));
     }
-        
-    # Banner
-    printf('==========================================================================================\n');
-    printf('|                   Bayesian Penalised Regression Estimation ver. %s                    |\n', VERSION);
-    printf('|                     (c) Enes Makalic, Daniel F Schmidt. 2016-2021                      |\n');
-    printf('==========================================================================================\n');
-    
-    # ===================================================================
-    # Table symbols
-    chline = '-'
-    cvline = '|'
-    cTT    = '+'
-    cplus  = '+'
-    bTT    = '+'
-    
-    # ===================================================================
-    # Find length of longest variable name
-    varnames = c(labels(object$mu.beta)[[1]], "_cons")
-    maxlen   = 12
-    nvars    = length(varnames)
-    for (i in 1:nvars)
-    {
-      if (nchar(varnames[i]) > maxlen)
-      {
-        maxlen = nchar(varnames[i])
-      }
-    }
-    
-    # ===================================================================
-    # Display pre-table stuff
-    #printf('%s%s%s\n', repchar('=', maxlen+1), '=', repchar('=', 76))
-    #printf('\n')
-    
-    if (object$model != 'logistic')
-    {
-      model = 'linear'
-    } else {
-      model = 'logistic'
-    }
-    
-    if (object$model == "gaussian")
-    {
-      distr = "Gaussian"
-    } else if (object$model == "laplace")
-    {
-      distr = "Laplace"
-    }
-    else if (object$model == "t")
-    {
-      distr = paste0("Student-t (DOF = ",object$t.dof,")")
-    }
-    else if (object$model == "logistic")
-    {
-      distr = "logistic"
-    }
-    else if (object$model == "poisson")
-    {
-      distr = "Poisson"
-    }
-    else if (object$model == "geometric")
-    {
-      distr = "geometric"
-    }
-    
-    if (object$prior == 'rr' || object$prior == 'ridge') {
-      prior = 'ridge'
-    } else if (object$prior == 'lasso') {      
-      prior = 'lasso'
-    } else if (object$prior == 'hs' || object$prior == 'horseshoe') {
-      prior = 'horseshoe'
-    } else if (object$prior == 'hs+' || object$prior == 'horseshoe+') {
-      prior = 'horseshoe+'
-    }
-
-    str = sprintf('Bayesian %s %s regression', distr, prior)
-    printf('%-64sNumber of obs   = %8d\n', str, n)
-    printf('%-64sNumber of vars  = %8.0f\n', '', px);
-    
-    if (object$model == 'gaussian' || object$model == 'laplace' || object$model == 't')
-    {
-      s2 = mean(object$sigma2)
-      if (object$model == 't' && object$t.dof > 2)
-      {
-        s2 = object$t.dof/(object$t.dof - 2) * s2
-      }
-      else if (object$model == 't' && object$t.dof <= 2)
-      {
-        s2 = NA
-      }
-
-      str = sprintf('MCMC Samples   = %6.0f', object$n.samples);
-      if (!is.na(s2))
-      {
-        printf('%-64sstd(Error)      = %8.5g\n', str, sqrt(s2));
-      }
-      else {
-        printf('%-64sstd(Error)      =        -\n', str);
-      }
-          
-      str = sprintf('MCMC Burnin    = %6.0f', object$burnin);
-      printf('%-64sR-squared       = %8.4f\n', str, object$r2);    
-      str = sprintf('MCMC Thinning  = %6.0f', object$thin);
-      printf('%-64sWAIC            = %8.5g\n', str, object$waic);
-      
-      rv$sd.error  = sqrt(s2)
-      rv$r2        = object$r2
-      rv$waic      = object$waic
-      rv$waic.dof  = object$waic.dof
-      rv$log.l     = object$log.l
-    }
-    else if (object$model == 'logistic')
-    {
-      log.l = object$log.l
-      log.l0 = object$log.l0
-      r2 = 1 - log.l / log.l0
-      
-      str = sprintf('MCMC Samples   = %6.0f', object$n.samples);
-      printf('%-64sLog. Likelihood = %8.5g\n', str, object$log.l);
-      str = sprintf('MCMC Burnin    = %6.0f', object$burnin);
-      printf('%-64sPseudo R2       = %8.4f\n', str, r2);    
-      str = sprintf('MCMC Thinning  = %6.0f', object$thin);
-      printf('%-64sWAIC            = %8.5g\n', str, object$waic);
-      
-      rv$log.l     = log.l
-      rv$p.r2      = r2
-      rv$waic      = object$waic
-      rv$waic.dof  = object$waic.dof
-    }
-    else if (object$model == 'poisson' || object$model == 'geometric')
-    {
-      log.l = object$log.l
-      log.l0 = object$log.l0
-      r2 = 1 - log.l / log.l0
-      
-      str = sprintf('MCMC Samples   = %6.0f', object$n.samples);
-      printf('%-64sOverdispersion  = %8.5g\n', str, object$over.dispersion);
-      str = sprintf('MCMC Burnin    = %6.0f', object$burnin);
-      printf('%-64sPseudo R2       = %8.4f\n', str, r2);    
-      str = sprintf('MCMC Thinning  = %6.0f', object$thin);
-      printf('%-64sWAIC            = %8.5g\n', str, object$waic);
-      
-      rv$log.l     = log.l
-      rv$p.r2      = r2
-      rv$waic      = object$waic
-      rv$waic.dof  = object$waic.dof      
-    }
-    printf('\n')
-    
-    # ===================================================================
-    # Table Header
-    fmtstr = sprintf('%%%ds', maxlen);
-    printf('%s%s%s\n', repchar(chline, maxlen+1), cTT, repchar(chline, 77))
-    tmpstr = sprintf(fmtstr, 'Parameter');
-    if (model == 'linear')
-    {
-      printf('%s %s  %10s %10s    [%d%% Cred. Interval] %10s %7s %10s\n', tmpstr, cvline, 'mean(Coef)', 'std(Coef)', CI, 'tStat', 'Rank', 'ESS');
-    } else if (model == 'logistic' && display.OR == F) {
-      printf('%s %s  %10s %10s    [%d%% Cred. Interval] %10s %7s %10s\n', tmpstr, cvline, 'med(Coef)', 'std(OR)', CI, 'tStat', 'Rank', 'ESS');
-    } else if (model == 'logistic' && display.OR == T) {
-      printf('%s %s  %10s %10s    [%d%% Cred. Interval] %10s %7s %10s\n', tmpstr, cvline, 'med(OR)', 'std(OR)', CI, 'tStat', 'Rank', 'ESS');
-    }
-    printf('%s%s%s\n', repchar(chline, maxlen+1), cTT, repchar(chline, 77));
-
-    # ===================================================================
-    if (PerSD) {
-      beta0 = object$beta0
-      beta  = object$beta
-      
-      object$beta0   = beta0 + object$std.X$mean.X %*% object$beta
-      object$beta    = apply(t(object$beta), 1, function(x)(x * object$std.X$std.X/sqrt(n)))    
-      object$mu.beta = object$mu.beta * t(as.matrix(object$std.X$std.X)) / sqrt(n)
-    }
-
-    # ===================================================================
-    # Return values
-    rv$mu.coef   = matrix(0,px+1,1, dimnames = list(varnames))
-    rv$se.coef   = matrix(0,px+1,1, dimnames = list(varnames))
-    rv$CI.coef   = matrix(0,px+1,2, dimnames = list(varnames))
-    
-    if (model == "logistic")
-    {
-      rv$med.OR  = matrix(0,px+1,1, dimnames = list(varnames))
-      rv$se.OR   = matrix(0,px+1,1, dimnames = list(varnames))
-      rv$CI.OR   = matrix(0,px+1,2, dimnames = list(varnames))
-    }
-
-    rv$t.stat    = matrix(0,px+1,1, dimnames = list(varnames))
-    rv$n.stars   = matrix(0,px+1,1, dimnames = list(varnames))
-    rv$ESS       = matrix(0,px+1,1, dimnames = list(varnames))
-    rv$rank     = matrix(0,px+1,1, dimnames = list(varnames))
-
-    # Variable information
-    rv$rank[1:(px+1)] = as.matrix(object$var.ranks)
-
-    # If sorting by BFR ranks
-    if (sort.rank == T)
-    {
-      O = sort(object$var.ranks, index.return = T)
-      indices = O$ix
-      indices[px+1] = px+1
-    }    
-    # Else sorted by the order they were passed in
     else {
-      indices = (1:(px+1))
+      printf('%-64sstd(Error)      =        -\n', str);
     }
     
-    for (i in 1:(px+1))
+    str = sprintf('MCMC Burnin    = %6.0f', object$burnin);
+    printf('%-64sR-squared       = %8.4f\n', str, object$r2);    
+    str = sprintf('MCMC Thinning  = %6.0f', object$thin);
+    printf('%-64sWAIC            = %8.5g\n', str, object$waic);
+    
+    rv$sd.error  = sqrt(s2)
+    rv$r2        = object$r2
+    rv$waic      = object$waic
+    rv$waic.dof  = object$waic.dof
+    rv$log.l     = object$log.l
+  }
+  else if (object$model == 'logistic')
+  {
+    log.l = object$log.l
+    log.l0 = object$log.l0
+    r2 = 1 - log.l / log.l0
+    
+    str = sprintf('MCMC Samples   = %6.0f', object$n.samples);
+    printf('%-64sLog. Likelihood = %8.5g\n', str, object$log.l);
+    str = sprintf('MCMC Burnin    = %6.0f', object$burnin);
+    printf('%-64sPseudo R2       = %8.4f\n', str, r2);    
+    str = sprintf('MCMC Thinning  = %6.0f', object$thin);
+    printf('%-64sWAIC            = %8.5g\n', str, object$waic);
+    
+    rv$log.l     = log.l
+    rv$p.r2      = r2
+    rv$waic      = object$waic
+    rv$waic.dof  = object$waic.dof
+  }
+  else if (object$model == 'poisson' || object$model == 'geometric')
+  {
+    log.l = object$log.l
+    log.l0 = object$log.l0
+    r2 = 1 - log.l / log.l0
+    
+    str = sprintf('MCMC Samples   = %6.0f', object$n.samples);
+    printf('%-64sOverdispersion  = %8.5g\n', str, object$over.dispersion);
+    str = sprintf('MCMC Burnin    = %6.0f', object$burnin);
+    printf('%-64sPseudo R2       = %8.4f\n', str, r2);    
+    str = sprintf('MCMC Thinning  = %6.0f', object$thin);
+    printf('%-64sWAIC            = %8.5g\n', str, object$waic);
+    
+    rv$log.l     = log.l
+    rv$p.r2      = r2
+    rv$waic      = object$waic
+    rv$waic.dof  = object$waic.dof      
+  }
+  printf('\n')
+  
+  # ===================================================================
+  # Table Header
+  fmtstr = sprintf('%%%ds', maxlen);
+  printf('%s%s%s\n', repchar(chline, maxlen+1), cTT, repchar(chline, 77))
+  tmpstr = sprintf(fmtstr, 'Parameter');
+  if (model == 'linear')
+  {
+    printf('%s %s  %10s %10s    [%d%% Cred. Interval] %10s %7s %10s\n', tmpstr, cvline, 'mean(Coef)', 'std(Coef)', CI, 'tStat', 'Rank', 'ESS');
+  } else if (model == 'logistic' && display.OR == F) {
+    printf('%s %s  %10s %10s    [%d%% Cred. Interval] %10s %7s %10s\n', tmpstr, cvline, 'med(Coef)', 'std(Coef)', CI, 'tStat', 'Rank', 'ESS');
+  } else if (model == 'logistic' && display.OR == T) {
+    printf('%s %s  %10s %10s    [%d%% Cred. Interval] %10s %7s %10s\n', tmpstr, cvline, 'med(OR)', 'std(OR)', CI, 'tStat', 'Rank', 'ESS');
+  }
+  printf('%s%s%s\n', repchar(chline, maxlen+1), cTT, repchar(chline, 77));
+  
+  # ===================================================================
+  if (PerSD) {
+    beta0 = object$beta0
+    beta  = object$beta
+    
+    object$beta0   = beta0 + object$std.X$mean.X %*% object$beta
+    object$beta    = apply(t(object$beta), 1, function(x)(x * object$std.X$std.X/sqrt(n)))    
+    object$mu.beta = object$mu.beta * t(as.matrix(object$std.X$std.X)) / sqrt(n)
+  }
+  
+  # ===================================================================
+  # Return values
+  rv$mu.coef   = matrix(0,px+1,1, dimnames = list(varnames))
+  rv$se.coef   = matrix(0,px+1,1, dimnames = list(varnames))
+  rv$CI.coef   = matrix(0,px+1,2, dimnames = list(varnames))
+  
+  if (model == "logistic")
+  {
+    rv$med.OR  = matrix(0,px+1,1, dimnames = list(varnames))
+    rv$se.OR   = matrix(0,px+1,1, dimnames = list(varnames))
+    rv$CI.OR   = matrix(0,px+1,2, dimnames = list(varnames))
+  }
+  
+  rv$t.stat    = matrix(0,px+1,1, dimnames = list(varnames))
+  rv$n.stars   = matrix(0,px+1,1, dimnames = list(varnames))
+  rv$ESS       = matrix(0,px+1,1, dimnames = list(varnames))
+  rv$rank     = matrix(0,px+1,1, dimnames = list(varnames))
+  
+  # Variable information
+  rv$rank[1:(px+1)] = as.matrix(object$var.ranks)
+  
+  # If sorting by BFR ranks
+  if (sort.rank == T)
+  {
+    O = sort(object$var.ranks, index.return = T)
+    indices = O$ix
+    indices[px+1] = px+1
+  }    
+  # Else sorted by the order they were passed in
+  else {
+    indices = (1:(px+1))
+  }
+  
+  #for (i in 1:(px+1))
+  for (i in 1:max.rows)
+  {
+    k = indices[i]
+    kappa = NA
+    
+    # Regression variable
+    if (k <= px)
     {
-      k = indices[i]
-      kappa = NA
+      s = object$beta[k,]
+      mu = object$mu.beta[k]
       
-      # Regression variable
-      if (k <= px)
-      {
-        s = object$beta[k,]
-        mu = object$mu.beta[k]
-
-        # Calculate shrinkage proportion, if possible
-        kappa = object$t.stat[k]
-      }
-      
-      # Intercept
-      else if (k == (px+1))
-      {
-        s = object$beta0
-        mu = mean(s)
-      }
-      
-      # Compute credible intervals/standard errors for beta's
-      std_err = stats::sd(s)
-      qlin = stats::quantile(s, c(CI.low, CI.high))
-      qlog = stats::quantile(exp(s), c(CI.low, CI.high))
-      q = qlin
-
-      rv$mu.coef[k]  = mu
-      rv$se.coef[k]  = std_err
-      rv$CI.coef[k,] = c(qlin[1],qlin[2])
-
-      # Compute credible intervals/standard errors for OR's
-      if (model == 'logistic')
-      {
-        med_OR = stats::median(exp(s))
-        std_err_OR = (qlog[2]-qlog[1])/2/1.96
-        
-        rv$med.OR[k] = med_OR
-        rv$se.OR[k]  = std_err_OR
-        rv$CI.OR[k,] = c(qlog[1],qlog[2])
-
-        # If display ORs, use these instead
-        if (display.OR)
-        {
-          mu = med_OR
-          std_err = std_err_OR
-          q = qlog
-        }
-        # Otherwise use posterior medians of coefficients for stability
-        else
-        {
-          mu = stats::median(s)
-        }
-      }
-      rv$t.stat[k] = kappa
-      
-      # Display results
-      tmpstr = sprintf(fmtstr, varnames[k])
-      if (is.na(kappa))
-        t.stat = '         .'
-      else t.stat = sprintf('%10.3f', kappa)
-      
-      if (is.na(object$var.ranks[k]))
-        rank = '      .'
-      else
-        rank = sprintf('%7d', object$var.ranks[k])
-
-      printf('%s %s %11.5f %10.5f   %10.5f %10.5f %s %s ', tmpstr, cvline, mu, std_err, q[1], q[2], t.stat, rank);
-
-      # Model selection scores
-      qlin = stats::quantile(s, c(0.025, 0.125, 0.875, 0.975))
-      qlog = stats::quantile(exp(s), c(0.025, 0.125, 0.875, 0.975))
-
-      # Test if 75% CI includes 0
-      if ( k <= px && ( (qlin[2] > 0 && qlin[3] > 0) || (qlin[2] < 0 && qlin[3] < 0) ) )    
-      {
-        printf('*')
-        rv$n.stars[k] = rv$n.stars[k] + 1
-      }
-      else 
-        printf(' ')
-      
-      # Test if 95% CI includes 0
-      if ( k <= px && ( (qlin[1] > 0 && qlin[4] > 0) || (qlin[1] < 0 && qlin[4] < 0) ) )    
-      {
-        printf('*')
-        rv$n.stars[k] = rv$n.stars[k] + 1
-      }
-      else
-        printf(' ')
-
-      # Display ESS-frac
-      if(k > px)
-        printf('%8s', '.')
-      else
-        printf('%8d', object$ess[k])
-
-      rv$ESS[k] = object$ess[k]
-      
-      printf('\n');
+      # Calculate shrinkage proportion, if possible
+      kappa = object$t.stat[k]
     }
     
-    printf('%s%s%s\n\n', repchar(chline, maxlen+1), cTT, repchar(chline, 77));
+    # Intercept
+    else if (k == (px+1))
+    {
+      s = object$beta0
+      mu = mean(s)
+    }
     
+    # Compute credible intervals/standard errors for beta's
+    std_err = stats::sd(s)
+    qlin = stats::quantile(s, c(CI.low, CI.high))
+    qlog = stats::quantile(exp(s), c(CI.low, CI.high))
+    q = qlin
+    
+    rv$mu.coef[k]  = mu
+    rv$se.coef[k]  = std_err
+    rv$CI.coef[k,] = c(qlin[1],qlin[2])
+    
+    # Compute credible intervals/standard errors for OR's
     if (model == 'logistic')
     {
-      rv$log.l0 = object$log.l0
+      med_OR = stats::median(exp(s))
+      std_err_OR = (qlog[2]-qlog[1])/2/1.96
+      
+      rv$med.OR[k] = med_OR
+      rv$se.OR[k]  = std_err_OR
+      rv$CI.OR[k,] = c(qlog[1],qlog[2])
+      
+      # If display ORs, use these instead
+      if (display.OR)
+      {
+        mu = med_OR
+        std_err = std_err_OR
+        q = qlog
+      }
+      # Otherwise use posterior medians of coefficients for stability
+      else
+      {
+        mu = stats::median(s)
+      }
     }
+    rv$t.stat[k] = kappa
     
-    invisible(rv)
+    # Display results
+    tmpstr = sprintf(fmtstr, varnames[k])
+    if (is.na(kappa))
+      t.stat = '         .'
+    else t.stat = sprintf('%10.3f', kappa)
+    
+    if (is.na(object$var.ranks[k]))
+      rank = '      .'
+    else
+      rank = sprintf('%7d', object$var.ranks[k])
+    
+    printf('%s %s %11.5f %10.5f   %10.5f %10.5f %s %s ', tmpstr, cvline, mu, std_err, q[1], q[2], t.stat, rank);
+    
+    # Model selection scores
+    qlin = stats::quantile(s, c(0.025, 0.125, 0.875, 0.975))
+    qlog = stats::quantile(exp(s), c(0.025, 0.125, 0.875, 0.975))
+    
+    # Test if 75% CI includes 0
+    if ( k <= px && ( (qlin[2] > 0 && qlin[3] > 0) || (qlin[2] < 0 && qlin[3] < 0) ) )    
+    {
+      printf('*')
+      rv$n.stars[k] = rv$n.stars[k] + 1
+    }
+    else 
+      printf(' ')
+    
+    # Test if 95% CI includes 0
+    if ( k <= px && ( (qlin[1] > 0 && qlin[4] > 0) || (qlin[1] < 0 && qlin[4] < 0) ) )    
+    {
+      printf('*')
+      rv$n.stars[k] = rv$n.stars[k] + 1
+    }
+    else
+      printf(' ')
+    
+    # Display ESS-frac
+    if(k > px)
+      printf('%8s', '.')
+    else
+      printf('%8d', object$ess[k])
+    
+    rv$ESS[k] = object$ess[k]
+    
+    printf('\n');
+  }
+  
+  printf('%s%s%s\n\n', repchar(chline, maxlen+1), cTT, repchar(chline, 77));
+  
+  if (model == 'logistic')
+  {
+    rv$log.l0 = object$log.l0
+  }
+  
+  invisible(rv)
 }
-
 
 # ============================================================================================================================
 # function to standardise columns of X to have mean zero and unit length
@@ -2026,7 +2315,7 @@ bayesreg.fastmvg_bhat <- function(Phi, alpha, d)
   #  Dpt[i,] = Dpt[i,]*d
   #}
   #Dpt = t(Dpt)
-    
+  
   Dpt   = Phi
   for (i in 1:length(d))
   {
@@ -2035,19 +2324,18 @@ bayesreg.fastmvg_bhat <- function(Phi, alpha, d)
   Dpt = t(Dpt)
   
   W     = Phi %*% Dpt + diag(1,n)
-
+  
   #w     = solve(W,(alpha-v))
-
+  
   L     = chol(W)
   vv    = forwardsolve(t(L), (alpha-v))
   w     = backsolve(L, vv)
-
+  
   r$x   = u + Dpt %*% w
   r$m   = r$x
   
   return(r)
 }
-
 # ============================================================================================================================
 # rinvg
 bayesreg.rinvg <- function(mu, lambda)
@@ -2339,20 +2627,78 @@ bayesreg.grad.L <- function(y, X, theta, model, Xty, xi, tau2)
     rv$grad[px+1] = sum(c) - sum(y)
   }
   
+  else if (model == 'logistic')
+  {
+    eta = X %*% theta[1:px] + theta[px+1]
+
+    eps = exp(-36)
+    lowerBnd = log(eps)
+    upperBnd = -lowerBnd
+    muLims = c(eps, 1-eps)
+    
+    # Constrain the linear predictor
+    eta[eta < lowerBnd] = lowerBnd
+    eta[eta > upperBnd] = upperBnd
+    
+    mu = 1 / (1 + exp(-eta))
+    
+    # Constrain probabilities 
+    mu[mu < eps] = eps
+    mu[mu > (1-eps)] = (1-eps)
+    
+    # Logistic likelihood
+    #negll = -y*log(mu) - (1.0-y)*log(1.0-mu)
+    rv$L = -sum(y*log(mu) + (1.0-y)*log(1.0-mu)) + sum(theta[1:px]^2)/2/tau2
+    
+    # Logistic gradient
+    rv$grad = matrix(0, px+1, 1)
+    rv$grad[1:px] = crossprod(X,mu) - Xty + theta[1:px]/tau2;
+    rv$grad[px+1] = sum(mu) - sum(y)    
+  }
+  
   rv
 }
 
+# ============================================================================================================================
+# Gradient and likelihoods for GLM models (for use with mgrad tools)
 # ============================================================================================================================
 # Gradient and likelihoods for GLM models (for use with mgrad tools)
 bayesreg.mgrad.L <- function(y, X, theta, eta, model, xi, Xty)
 {
   rv = list()
   px = ncol(X)
+  nx = nrow(X)
+  ix = NULL
   
   # Form the linear predictor if needed
   if (is.null(eta))
   {
-    rv$eta = as.vector(X %*% theta[1:px] + theta[px+1])
+    #if (px <= 100)
+    #{
+    #ix = which(abs(theta[1:px])>1e-2)
+    #if (length(ix)<=100)
+    #{
+    #rv$eta = matrix(theta[px+1],nx,1)
+    #for (i in ix)
+    #{
+    #  rv$eta = rv$eta + theta[i]*X[,i]
+    #}
+    #rv$eta = as.vector(rv$eta)
+    #}
+    #else
+    #{
+    #rv$eta = as.vector(X %*% theta[1:px] + theta[px+1])
+    
+    
+    #ix = abs(theta[1:px]/sqrt(nx))>1e-3
+    #if (px>500 && sum(ix)<=200)
+    #{
+    #  rv$eta = as.vector(tcrossprod((theta[c(ix,F)]),X[,ix]) + theta[px+1])
+    #}
+    #else
+    #{
+    rv$eta = as.vector(tcrossprod((theta[1:px]),X) + theta[px+1])
+    #}
   }  
   else
   {
@@ -2366,10 +2712,10 @@ bayesreg.mgrad.L <- function(y, X, theta, eta, model, xi, Xty)
     #rv$eta = pmin(rv$eta, 500);
     rv$eta[rv$eta>500] = 500
     mu  = exp(rv$eta)
-  
+    
     # Poisson likelihood (up to constants)
     rv$L = sum(mu) - sum( y*rv$eta )
-  
+    
     # Poisson gradient
     rv$grad = matrix(0, px+1, 1)
     rv$grad[1:px] = crossprod(X,mu) - Xty
@@ -2397,6 +2743,39 @@ bayesreg.mgrad.L <- function(y, X, theta, eta, model, xi, Xty)
     
     rv$H.b0 = sum(mu/(mu+1))
   }
+  
+  else if (model == 'logistic')
+  {
+    #eta = X %*% theta[1:px] + theta[px+1]
+    
+    eps = exp(-36)
+    #lowerBnd = log(eps)
+    #upperBnd = -lowerBnd
+    muLims = c(eps, 1-eps)
+    
+    # Constrain the linear predictor
+    eta = rv$eta
+    
+    #eta[eta < lowerBnd] = lowerBnd
+    #eta[eta > upperBnd] = upperBnd
+    
+    mu = 1 / (1 + exp(-eta))
+    
+    # Constrain probabilities 
+    mu[mu < eps] = eps
+    mu[mu > (1-eps)] = (1-eps)
+    
+    # Logistic likelihood
+    #negll = -y*log(mu) - (1.0-y)*log(1.0-mu)
+    rv$L = -sum(y*log(mu) + (1.0-y)*log(1.0-mu))
+    #rv$L = -crossprod(y,eta) + sum(log(1+exp(eta)))
+    
+    # Logistic gradient
+    rv$grad = matrix(0, px+1, 1)
+    rv$grad[1:px] = (crossprod(X,mu) - Xty)
+    rv$grad[px+1] = (sum(mu) - sum(y))
+    rv$H.b0 = sum( (1-mu)*mu )
+  }  
   
   #
   rv$extra.stats = NULL
@@ -2463,6 +2842,10 @@ bayesreg.mgrad.sample.beta <- function(b, b0, L.b, grad.b, D, delta, eta, H.b0, 
   if (model == 'geometric')
   {
     rv.mh.new = bayesreg.mgrad.L(y, X, c(b.new,b0), NULL, 'geometric', extra.model.params, Xty)
+  }
+  if (model == 'logistic')
+  {
+    rv.mh.new = bayesreg.mgrad.L(y, X, c(b.new,b0), NULL, 'logistic', extra.model.params, Xty)
   }
   grad.b.new = rv.mh.new$grad[1:px]
   

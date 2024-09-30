@@ -6,6 +6,7 @@
 #'  \item Provides variable ranking and importance, credible intervals and diagnostics such as the widely applicable information criterion.
 #'  \item Factor variables are automatically grouped together and additional shrinkage is applied to the set of indicator variables to which they expand.
 #'  \item Prediction tools for generating credible intervals and Bayesian averaging of predictions.
+#'  \item Support for multiple cores
 #' }
 #' The lasso, horseshoe and horseshoe+ priors are recommended for data sets where the number of 
 #' predictors is greater than the sample size. The Laplace, Student-t and logistic models are based on scale-mixture representations;
@@ -17,32 +18,34 @@
 #' implementation of Bayesian linear regression: Laplace and Student-t distribution errors. 
 #' The widely applicable information criterion (WAIC) is routinely calculated and displayed
 #' to assist users in selecting an appropriate prior distribution for their particular problem, i.e., choice of regularisation or data model.
-#' Most features are straightforward to use.
+#' Most features are straightforward to use. The package will make use of multiple CPU cores by default, if available. 
+#' This feature may be disabled if necessary for problems with very large predictor matrices.
 #' 
 #' Further information on the particular algorithms/methods implemented in this package provided
 #' by the literature referenced below.
 #' 
 #' Version history:
 #' \itemize{
-#' \item Version 1.1: Initial release
-#' \item Version 1.2: Added Poisson and geometric regression; user specifiable credible interval levels for \code{summary()} and \code{predict()}; \code{summary()} column "ESS" now reports effective sample size rather than percentage-effective sample size
+#' \item Version 1.1: Initial release.
+#' \item Version 1.2: Added Poisson and geometric regression; user specifiable credible interval levels for \code{summary()} and \code{predict()}; \code{summary()} column "ESS" now reports effective sample size rather than percentage-effective sample size.
+#' \item Version 1.3: Added support for multiple cores; if n.cores = Inf (the default) Bayesreg will divide the requested number of samples by the number of available cores (total cores minus one) and run these as seperate sampling chains, in parallel, and then recombine after sampling. It is possible to explicitly control the number of cores being used via the n.cores option if desired; n.cores=1 will disable parallelization.
 #' }
 #' 
-#' @title Getting started with the bayesreg package
+#' @title Getting started with the Bayesreg package
 #' @docType package
 #' @author Daniel Schmidt \email{daniel.schmidt@@monash.edu} 
 #' 
 #' Department of Data Science and AI, Monash University, Australia
 #'
-#' Enes Makalic \email{emakalic@@unimelb.edu.au}
+#' Enes Makalic \email{enes.makalic@@monash.edu}
 #' 
-#' Centre for Epidemiology and Biostatistics, The University of Melbourne, Australia
+#' Department of Data Science and AI, Monash University, Australia
 #' 
 #' @note     To cite this package please reference: 
 #'
 #' Makalic, E. & Schmidt, D. F.
 #' High-Dimensional Bayesian Regularised Regression with the BayesReg Package
-#' arXiv:1611.06649 [stat.CO], 2016 \url{https://arxiv.org/pdf/1611.06649.pdf}
+#' arXiv:1611.06649 [stat.CO], 2016 \url{http://arxiv.org/pdf/1611.06649}
 #' 
 #' A MATLAB-compatible implementation of this package can be obtained from:
 #' 
@@ -94,7 +97,30 @@
 #' @examples 
 #' \dontrun{
 #' # -----------------------------------------------------------------
+#' # By default Bayesreg now utilizes multiple cores if you have them
+#' # available. If you do not want to use multiple cores you can set 
+#' # n.cores=1 when calling Bayesreg.
+#' #
+#' # In most realistic/practical settings, i.e., when a 
+#' # even a moderate number of samples is being requested, parallelization 
+#' # will usually result in substantial speedups, and can dramatically reduce
+#' # run-time for large numbers of samples.
+#' #
+#' # However, if your design matrix and desired number of samples 
+#' # are small (i.e, small nrow(X), ncol(X) and n.samples) 
+#' # then sometimes no parallelization, or parallelization with a small
+#' # number of cores, can be quicker due to the overhead of setting up 
+#' # multiple threads. This is likely only relevant if you are calling Bayesreg
+#' # hundreds/thousands of times with *small* numbers of samples being requested
+#' # for each call, e.g., if you are doing some sort of one-at-a-time testing
+#' # across many predictors such as a genome-wide association test, or similar.
+#' # In this case you may be better off parallelizing the calls to 
+#' # Bayesreg across the tests and disabling parallelization when calling 
+#' # Bayesreg (i.e., n.cores=1).
+#' #
+#' # -----------------------------------------------------------------
 #' # Example 1: Gaussian regression
+#' #
 #' X = matrix(rnorm(100*20),100,20)
 #' b = matrix(0,20,1)
 #' b[1:5] = c(5,4,3,2,1)
@@ -104,7 +130,10 @@
 #' rv.lm <- lm(y~.,df)                        # Regular least-squares
 #' summary(rv.lm)
 #' 
-#' rv.hs <- bayesreg(y~.,df,prior="hs")       # Horseshoe regression
+#' # Horseshoe regression -- here we show how to explicitly control the maximum
+#' # number of cores being used for sampling to 4
+#' rv.hs <- bayesreg(y~., df, prior="hs", n.cores=4)       
+#' rv.hs$n.cores  # actual number of cores used (will be <= 4, depending on machine)
 #' rv.hs.s <- summary(rv.hs)
 #' 
 #' # Expected squared prediction error for least-squares
@@ -122,10 +151,10 @@
 #' df = data.frame(X,y)
 #' 
 #' # Gaussian ridge
-#' rv.G <- bayesreg(y~., df, model = "gaussian", prior = "ridge", n.samples = 1e3)
+#' rv.G <- bayesreg(y~., df, model = "gaussian", prior = "ridge", n.samples = 1e5)
 #' 
 #' # Student-t ridge
-#' rv.t <- bayesreg(y~., df, model = "t", prior = "ridge", t.dof = 5, n.samples = 1e3)
+#' rv.t <- bayesreg(y~., df, model = "t", prior = "ridge", t.dof = 5, n.samples = 1e5)
 #' 
 #' # Plot the different estimates with credible intervals
 #' plot(df$X, df$y, xlab="x", ylab="y")
@@ -147,7 +176,7 @@
 #' # -----------------------------------------------------------------
 #' # Example 3: Poisson/geometric regression example
 #' 
-#' X  = matrix(rnorm(100*20),100,5)
+#' X  = matrix(rnorm(100*5),100,5)
 #' b  = c(0.5,-1,0,0,1)
 #' nu = X%*%b + 1
 #' y  = rpois(lambda=exp(nu),n=length(nu))
@@ -155,11 +184,11 @@
 #' df <- data.frame(X,y)
 #'
 #' # Fit a Poisson regression
-#' rv.pois=bayesreg(y~.,data=df,model="poisson",prior="hs", burnin=1e4, n.samples=1e4)
+#' rv.pois=bayesreg(y~., data=df, model="poisson",prior="hs", burnin=1e4, n.samples=5e4)
 #' summary(rv.pois)
 #' 
 #' # Fit a geometric regression
-#' rv.geo=bayesreg(y~.,data=df,model="geometric",prior="hs", burnin=1e4, n.samples=1e4)
+#' rv.geo=bayesreg(y~., data=df, model="geometric",prior="hs", burnin=1e4, n.samples=5e4)
 #' summary(rv.geo)
 #' 
 #' # Compare the two models in terms of their WAIC scores
@@ -180,6 +209,7 @@
 #' spambase.tst = spambase[-seq(1,nrow(spambase),10),]
 #'   
 #' # Fit a model using logistic horseshoe for 2,000 samples
+#' # In practice, > 10,000 samples would be a more realistic amount to draw
 #' rv <- bayesreg(is.spam ~ ., spambase.tr, model = "logistic", prior = "horseshoe", n.samples = 2e3)
 #'   
 #' # Summarise, sorting variables by their ranking importance
@@ -201,4 +231,7 @@
 #' }
 #' 
 #' @import stats
+#' @import pgdraw
+#' @import doParallel
+#' @import foreach
 NULL

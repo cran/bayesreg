@@ -12,7 +12,8 @@ bayesreg(
   n.samples = 1000,
   burnin = 1000,
   thin = 5,
-  t.dof = 5
+  t.dof = 5,
+  n.cores = Inf
 )
 }
 \arguments{
@@ -36,6 +37,8 @@ horseshoe+ regression (\code{prior="hs+"} or \code{prior="horseshoe+"})}
 \item{thin}{Desired level of thinning.}
 
 \item{t.dof}{Degrees of freedom for the Student-t distribution.}
+
+\item{n.cores}{Maximum number of cores to use; if \code{n.cores=Inf} then Bayesreg automatically sets this to one less than the maximum number of available cores. If \code{n.cores=1} then no parallelization occurs.}
 }
 \value{
 An object with S3 class \code{"bayesreg"} containing the results of the sampling process, plus some additional information.
@@ -60,6 +63,7 @@ The returned object also stores the parameters/options used to run \code{bayesre
 \item{thin}{The level of thinning.}
 \item{n}{The sample size of the data used to fit the model.}
 \item{p}{The number of covariates in the fitted model.}
+\item{n.cores}{The number of cores actually used during sampling.}
 }
 \description{
 Fit a linear or logistic regression model using Bayesian continuous shrinkage prior distributions. Handles ridge, lasso, horseshoe and horseshoe+ regression with logistic,
@@ -70,7 +74,7 @@ To cite this toolbox please reference:
   
 Makalic, E. & Schmidt, D. F.
 High-Dimensional Bayesian Regularised Regression with the BayesReg Package
-arXiv:1611.06649 [stat.CO], 2016 \url{https://arxiv.org/pdf/1611.06649.pdf}
+arXiv:1611.06649 [stat.CO], 2016 \url{http://arxiv.org/pdf/1611.06649}
 
 A MATLAB implementation of the bayesreg function is also available from:
 
@@ -87,9 +91,39 @@ While only \code{n.samples} are returned, the total number of samples generated 
 of the regression coefficients, the code will use either Rue's algorithm (when the number of samples is twice the number of covariates) or the algorithm of 
 Bhattacharya et al. as appropriate. Factor variables are automatically grouped together and 
 additional shrinkage is applied to the set of indicator variables to which they expand.
+
+If \code{n.cores > 1} then Bayesreg will divide the total sampling process between a number of independent sampling chains, with each chain being run on
+a seperate core. If \code{n.cores=Inf} then Bayesreg will use one less than the total number of available cores.
+If \code{n.cores} is a positive integer, then this is the maximum number of cores Bayesreg will use, though Bayesreg will cap this at the total number of available cores minus one. 
+The total number of samples are split evenly between the number of cores being utilised, and after sampling
+the different chains are recombined into a single body of samples. Each chain will perform
+\code{burnin} burn-in sampling iterations before collecting samples, so the improvement in speed from
+using from multiple cores will be greater if \code{n.samples*thin} is substantially greater than \code{burnin}.
 }
 
 \examples{
+# -----------------------------------------------------------------
+# By default Bayesreg now utilizes multiple cores if you have them
+# available. If you do not want to use multiple cores you can set 
+# n.cores=1 when calling Bayesreg.
+#
+# In most realistic/practical settings, i.e., when a 
+# even a moderate number of samples is being requested, parallelization 
+# will usually result in substantial speedups, and can dramatically reduce
+# run-time for large numbers of samples.
+#
+# However, if your design matrix and desired number of samples 
+# are small (i.e, small nrow(X), ncol(X) and n.samples) 
+# then sometimes no parallelization, or parallelization with a small
+# number of cores, can be quicker due to the overhead of setting up 
+# multiple threads. This is likely only relevant if you are calling Bayesreg
+# hundreds/thousands of times with *small* numbers of samples being requested
+# for each call, e.g., if you are doing some sort of one-at-a-time testing
+# across many predictors such as a genome-wide association test, or similar.
+# In this case you may be better off parallelizing the calls to 
+# Bayesreg across the tests and disabling parallelization when calling 
+# Bayesreg (i.e., n.cores=1).
+#
 # -----------------------------------------------------------------
 # Example 1: Gaussian regression
 X = matrix(rnorm(100*20),100,20)
@@ -101,7 +135,10 @@ df <- data.frame(X,y)
 rv.lm <- lm(y~.,df)                        # Regular least-squares
 summary(rv.lm)
 
-rv.hs <- bayesreg(y~.,df,prior="hs")       # Horseshoe regression
+# Horseshoe regression -- here we show how to explicitly control the maximum
+# number of cores being used for sampling to 4
+rv.hs <- bayesreg(y~., df, prior="hs", n.cores=4)       
+rv.hs$n.cores  # actual number of cores used (will be <= 4, depending on machine)
 rv.hs.s <- summary(rv.hs)
 
 # Expected squared prediction error for least-squares
@@ -144,7 +181,7 @@ legend(1,11,c("Gaussian","Student-t (dof=5)"),lty=c(1,1),col=c("blue","darkred")
 # -----------------------------------------------------------------
 # Example 3: Poisson/geometric regression example
 
-X  = matrix(rnorm(100*20),100,5)
+X  = matrix(rnorm(100*5),100,5)
 b  = c(0.5,-1,0,0,1)
 nu = X\%*\%b + 1
 y  = rpois(lambda=exp(nu),n=length(nu))
@@ -152,11 +189,11 @@ y  = rpois(lambda=exp(nu),n=length(nu))
 df <- data.frame(X,y)
 
 # Fit a Poisson regression
-rv.pois=bayesreg(y~.,data=df,model="poisson",prior="hs", burnin=1e4, n.samples=1e4)
+rv.pois=bayesreg(y~.,data=df,model="poisson",prior="hs", burnin=1e4, n.samples=5e4)
 summary(rv.pois)
 
 # Fit a geometric regression
-rv.geo=bayesreg(y~.,data=df,model="geometric",prior="hs", burnin=1e4, n.samples=1e4)
+rv.geo=bayesreg(y~.,data=df,model="geometric",prior="hs", burnin=1e4, n.samples=5e4)
 summary(rv.geo)
 
 # Compare the two models in terms of their WAIC scores
@@ -177,6 +214,7 @@ spambase.tr  = spambase[seq(1,nrow(spambase),10),]
 spambase.tst = spambase[-seq(1,nrow(spambase),10),]
   
 # Fit a model using logistic horseshoe for 2,000 samples
+# In practice, > 10,000 samples would be a more realistic amount to draw
 rv <- bayesreg(is.spam ~ ., spambase.tr, model = "logistic", prior = "horseshoe", n.samples = 2e3)
   
 # Summarise, sorting variables by their ranking importance
@@ -201,7 +239,7 @@ cat('Neg Log-Like for Bayes average: ', sum(-log(y_prob[,1])), '\n')
 \references{
 Makalic, E. & Schmidt, D. F.
 High-Dimensional Bayesian Regularised Regression with the BayesReg Package
-arXiv:1611.06649 [stat.CO], 2016 \url{https://arxiv.org/pdf/1611.06649.pdf}
+arXiv:1611.06649 [stat.CO], 2016 \url{http://arxiv.org/pdf/1611.06649}
 
 Park, T. & Casella, G. 
 The Bayesian Lasso 
@@ -213,7 +251,7 @@ Biometrika, Vol. 97, 465-480, 2010
 
 Makalic, E. & Schmidt, D. F. 
 A Simple Sampler for the Horseshoe Estimator 
-IEEE Signal Processing Letters, Vol. 23, pp. 179-182, 2016 \url{https://arxiv.org/pdf/1508.03884v4.pdf}
+IEEE Signal Processing Letters, Vol. 23, pp. 179-182, 2016 \url{http://arxiv.org/pdf/1508.03884v4}
 
 Bhadra, A.; Datta, J.; Polson, N. G. & Willard, B. 
 The Horseshoe+ Estimator of Ultra-Sparse Signals 

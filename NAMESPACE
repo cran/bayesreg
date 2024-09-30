@@ -3,4 +3,7 @@
 S3method(predict,bayesreg)
 S3method(summary,bayesreg)
 export(bayesreg)
+import(doParallel)
+import(foreach)
+import(pgdraw)
 import(stats)
